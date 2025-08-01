@@ -475,7 +475,7 @@
             analyzeBtn.disabled = true; // Deshabilitar el botón de análisis
 
             try {
-                const response = await fetch('https://analis-de-sentimientos.vercel.app', {
+                const response = await fetch('https://analis-de-sentimientos.vercel.app/app.py', {
                     method: 'POST',
                     body: formData
                 });
