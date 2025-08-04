@@ -1,8 +1,10 @@
-Flask==3.0.3
-flask-cors==4.0.0
-SpeechRecognition==3.10.1
-pydub==0.25.1
-pandas==2.2.2
-spacy==3.7.4
-nltk==3.8.1
-scikit-learn==1.4.2
+Flask
+Flask-Cors
+speechrecognition
+pydub
+pandas
+nltk
+spacy
+scikit-learn
+uuid
+es-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.7.0/es_core_news_sm-3.7.0-py3-none-any.whl
