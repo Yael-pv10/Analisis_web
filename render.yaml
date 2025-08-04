@@ -3,7 +3,7 @@ services:
     name: audio-preprocessing-api
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python nombre_de_tu_archivo.py
+    startCommand: app.py
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
