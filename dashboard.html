@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análisis de Sentimientos de Audio en Tiempo Real</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .waveform {
+            background: linear-gradient(90deg, #3B82F6 0%, #10B981 50%, #EC4899 100%);
+            height: 100px;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+        .waveform::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 100%);
+        }
+        .sentiment-positive {
+            background-color: rgba(16, 185, 129, 0.1);
+            border-left: 4px solid #10B981;
+        }
+        .sentiment-negative {
+            background-color: rgba(239, 68, 68, 0.1);
+            border-left: 4px solid #EF4444;
+        }
+        .sentiment-neutral {
+            background-color: rgba(156, 163, 175, 0.1);
+            border-left: 4px solid #9CA3AF;
+        }
+        .typing-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background-color: #3B82F6;
+            animation: blink 1s infinite;
+            vertical-align: middle;
+            margin-left: 2px;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <header class="bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="flex items-center mb-4 md:mb-0">
+                    <i class="fas fa-comment-dots text-3xl mr-3"></i>
+                    <h1 class="text-2xl md:text-3xl font-bold">AudioSentiment</h1>
+                </div>
+                <nav class="flex space-x-4">
+                    <a href="#" class="px-3 py-2 rounded-lg bg-white bg-opacity-20 hover:bg-opacity-30 transition">Inicio</a>
+                    <a href="preprosesamiento.html" class="px-3 py-2 rounded-lg hover:bg-white hover:bg-opacity-20 transition">Preprocesamiento</a>
+                    <a href="#" class="px-3 py-2 rounded-lg hover:bg-white hover:bg-opacity-20 transition">Configuración</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Sección de grabación y análisis -->
+            <div class="lg:col-span-2 bg-white rounded-xl shadow-md overflow-hidden">
+                <div class="p-6">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-6">Analizador de Sentimientos</h2>
+                    
+                    <div class="mb-6">
+                        <div class="flex flex-col sm:flex-row justify-between items-center mb-4">
+                            <h3 class="text-lg font-medium text-gray-700 mb-2 sm:mb-0">Grabación de Audio</h3>
+                            <div class="flex space-x-3">
+                                <button id="startRecord" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition flex items-center">
+                                    <i class="fas fa-microphone mr-2"></i> Grabar
+                                </button>
+                                <button id="stopRecord" disabled class="px-4 py-2 bg-gray-400 text-white rounded-lg flex items-center">
+                                    <i class="fas fa-stop mr-2"></i> Detener
+                                </button>
+                                <button id="uploadAudio" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition flex items-center">
+                                    <i class="fas fa-upload mr-2"></i> Subir
+                                </button>
+                                <input type="file" id="audioFile" accept="audio/*" class="hidden">
+                            </div>
+                        </div>
+                        
+                        <div id="recordingStatus" class="hidden mb-4 p-3 bg-red-50 text-red-700 rounded-lg flex items-center">
+                            <div class="w-3 h-3 rounded-full bg-red-500 mr-2 pulse"></div>
+                            <span>Grabando audio...</span>
+                        </div>
+                        
+                        <div id="audioVisualization" class="waveform rounded-lg mb-4 hidden"></div>
+                        
+                        <audio id="audioPlayer" controls class="w-full mb-4 hidden"></audio>
+                    </div>
+                    
+                    <div class="mb-6">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-lg font-medium text-gray-700">Transcripción en Vivo</h3>
+                            <div id="transcriptionStatus" class="hidden text-sm text-blue-600 flex items-center">
+                                <i class="fas fa-circle-notch fa-spin mr-1"></i> Transcribiendo...
+                            </div>
+                        </div>
+                        <div id="transcription" class="bg-gray-50 p-4 rounded-lg h-48 overflow-y-auto mb-4">
+                            <p class="text-gray-500 italic">La transcripción aparecerá aquí...</p>
+                        </div>
+                        <div class="flex justify-end">
+                            <button id="analyzeBtn" disabled class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center">
+                                <i class="fas fa-chart-pie mr-2"></i> Analizar Sentimiento
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+                    
+            <!-- Sección de resultados y gráficos -->
+            <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                <div class="p-6">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-6">Resultados</h2>
+                    
+                    <div id="resultSection" class="hidden">
+                        <div class="mb-6">
+                            <h3 class="text-lg font-medium text-gray-700 mb-3">Resumen del Sentimiento</h3>
+                            <div id="sentimentResult" class="p-4 rounded-lg flex items-center justify-between mb-4">
+                                <div class="flex items-center">
+                                    <i id="sentimentIcon" class="fas fa-meh text-4xl mr-3"></i>
+                                    <div>
+                                        <h4 id="sentimentLabel" class="text-xl font-semibold">Neutral</h4>
+                                        <p id="sentimentConfidence" class="text-gray-600">Confianza: 75%</p>
+                                    </div>
+                                </div>
+                                <span id="sentimentScore" class="text-3xl font-bold">0.45</span>
+                            </div>
+                            
+                            <div class="grid grid-cols-3 gap-2 mb-4">
+                                <div class="bg-green-50 p-3 rounded-lg text-center">
+                                    <p class="text-sm text-gray-600">Positivo</p>
+                                    <p id="positivePercent" class="text-xl font-bold text-green-600">45%</p>
+                                </div>
+                                <div class="bg-gray-50 p-3 rounded-lg text-center">
+                                    <p class="text-sm text-gray-600">Neutral</p>
+                                    <p id="neutralPercent" class="text-xl font-bold text-gray-600">30%</p>
+                                </div>
+                                <div class="bg-red-50 p-3 rounded-lg text-center">
+                                    <p class="text-sm text-gray-600">Negativo</p>
+                                    <p id="negativePercent" class="text-xl font-bold text-red-600">25%</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-6">
+                            <h3 class="text-lg font-medium text-gray-700 mb-3">Distribución de Sentimientos</h3>
+                            <canvas id="sentimentChart" height="200"></canvas>
+                        </div>
+                        
+                        <div>
+                            <h3 class="text-lg font-medium text-gray-700 mb-3">Frases Clave</h3>
+                            <div id="keyPhrases" class="space-y-2">
+                                <!-- Ejemplo de frases - se llenará dinámicamente -->
+                                <div class="p-3 rounded-lg sentiment-positive">
+                                    <p class="font-medium">"Me encanta este producto"</p>
+                                    <p class="text-sm text-gray-600">Positivo (85%)</p>
+                                </div>
+                                <div class="p-3 rounded-lg sentiment-neutral">
+                                    <p class="font-medium">"Es bastante normal"</p>
+                                    <p class="text-sm text-gray-600">Neutral (72%)</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="emptyResults" class="text-center py-10">
+                        <i class="fas fa-chart-bar text-4xl text-gray-300 mb-3"></i>
+                        <h3 class="text-lg font-medium text-gray-500">Sin datos para mostrar</h3>
+                        <p class="text-gray-400">Graba o sube un audio para comenzar el análisis</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+            
+        <!-- Historial reciente -->
+        <div class="mt-12 bg-white rounded-xl shadow-md overflow-hidden">
+            <div class="p-6">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-6">Historial Reciente</h2>
+                
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duración</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transcripción</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sentimiento</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <!-- Ejemplo de fila - se llenará dinámicamente -->
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">05/06/2023</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">0:45</td>
+                                <td class="px-6 py-4 text-sm text-gray-500">Estoy muy satisfecho con el servicio...</td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Positivo</span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                    <a href="#" class="text-blue-600 hover:text-blue-900 mr-3">Ver</a>
+                                    <a href="#" class="text-red-600 hover:text-red-900">Eliminar</a>
+                                </td>
+                            </tr>
+                            <!-- Más filas... -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-gray-800 text-white py-8 mt-12">
+        <div class="container mx-auto px-4">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-4 md:mb-0">
+                    <h2 class="text-xl font-bold mb-2">AudioSentiment</h2>
+                    <p class="text-gray-400">Herramienta de análisis de sentimientos en audio</p>
+                </div>
+                <div class="flex space-x-6">
+                    <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-github text-xl"></i></a>
+                    <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-twitter text-xl"></i></a>
+                    <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-linkedin text-xl"></i></a>
+                </div>
+            </div>
+            <div class="border-t border-gray-700 mt-6 pt-6 text-center text-gray-400 text-sm">
+                © 2023 AudioSentiment. Todos los derechos reservados.
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Variables globales
+        let mediaRecorder;
+        let audioChunks = [];
+        let audioContext;
+        let analyser;
+        let dataArray;
+        let animationId;
+        let transcription = "";
+        let currentAudioUrl = null;
+        let recognition;
+        let isRecording = false;
+        let transcriptionTimeout;
+        let lastTranscriptionUpdate = 0;
+
+        // Elementos del DOM
+        const startRecordBtn = document.getElementById('startRecord');
+        const stopRecordBtn = document.getElementById('stopRecord');
+        const uploadAudioBtn = document.getElementById('uploadAudio');
+        const audioFileInput = document.getElementById('audioFile');
+        const recordingStatus = document.getElementById('recordingStatus');
+        const transcriptionStatus = document.getElementById('transcriptionStatus');
+        const audioVisualization = document.getElementById('audioVisualization');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const transcriptionEl = document.getElementById('transcription');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const resultSection = document.getElementById('resultSection');
+        const emptyResults = document.getElementById('emptyResults');
+        const sentimentIcon = document.getElementById('sentimentIcon');
+        const sentimentLabel = document.getElementById('sentimentLabel');
+        const sentimentConfidence = document.getElementById('sentimentConfidence');
+        const sentimentScore = document.getElementById('sentimentScore');
+        const positivePercent = document.getElementById('positivePercent');
+        const neutralPercent = document.getElementById('neutralPercent');
+        const negativePercent = document.getElementById('negativePercent');
+        const keyPhrases = document.getElementById('keyPhrases');
+        let sentimentChart;
+
+        // Inicializar la aplicación
+        document.addEventListener('DOMContentLoaded', function() {
+            // Verificar compatibilidad con Web Audio API
+            if (!window.AudioContext && !window.webkitAudioContext) {
+                alert('Tu navegador no soporta la API de audio necesaria para esta aplicación.');
+                return;
+            }
+
+            // Configurar eventos
+            setupEventListeners();
+        });
+
+        // Configurar listeners de eventos
+        function setupEventListeners() {
+            // Grabación de audio
+            startRecordBtn.addEventListener('click', startRecording);
+            stopRecordBtn.addEventListener('click', stopRecording);
+            
+            // Subir archivo de audio
+            uploadAudioBtn.addEventListener('click', () => audioFileInput.click());
+            audioFileInput.addEventListener('change', handleFileUpload);
+            
+            // Análisis de sentimiento
+            analyzeBtn.addEventListener('click', analyzeSentiment);
+        }
+
+        // Iniciar grabación
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                
+                // Configurar audio context para visualización
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+                analyser.fftSize = 256;
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+
+                // Limpiar grabaciones anteriores
+                audioChunks = [];
+                transcription = "";
+                transcriptionEl.innerHTML = '<p class="text-gray-500 italic">La transcripción aparecerá aquí...</p>';
+                
+                // Iniciar transcripción en vivo
+                startLiveTranscription();
+
+                // Configurar eventos del MediaRecorder
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    currentAudioUrl = URL.createObjectURL(audioBlob);
+                    audioPlayer.src = currentAudioUrl;
+                    audioPlayer.classList.remove('hidden');
+                    
+                    // Detener la transcripción en vivo
+                    if (recognition) {
+                        recognition.stop();
+                    }
+                    
+                    // Procesar la transcripción final
+                    processFinalTranscription();
+                };
+
+                // Iniciar grabación
+                mediaRecorder.start(100); // Recopilar datos cada 100ms
+                startVisualization();
+                
+                // Actualizar UI
+                startRecordBtn.disabled = true;
+                stopRecordBtn.disabled = false;
+                recordingStatus.classList.remove('hidden');
+                transcriptionStatus.classList.remove('hidden');
+                analyzeBtn.disabled = true;
+                isRecording = true;
+
+                // Configurar parada automática después de 5 minutos (300,000 ms)
+                setTimeout(() => {
+                    if (mediaRecorder.state === 'recording') {
+                        stopRecording();
+                    }
+                }, 300000);
+
+            } catch (error) {
+                console.error('Error al acceder al micrófono:', error);
+                alert('No se pudo acceder al micrófono. Asegúrate de otorgar los permisos necesarios.');
+            }
+        }
+
+        // Detener grabación
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                
+                // Detener todas las pistas del stream
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                
+                // Detener visualización
+                cancelAnimationFrame(animationId);
+                audioVisualization.innerHTML = '';
+                audioVisualization.classList.add('hidden');
+                
+                // Actualizar UI
+                startRecordBtn.disabled = false;
+                stopRecordBtn.disabled = true;
+                recordingStatus.classList.add('hidden');
+                transcriptionStatus.classList.add('hidden');
+                isRecording = false;
+            }
+        }
+
+        // Visualización de onda de audio
+        function startVisualization() {
+            audioVisualization.classList.remove('hidden');
+            audioVisualization.innerHTML = '';
+
+            const canvas = document.createElement('canvas');
+            canvas.width = audioVisualization.offsetWidth;
+            canvas.height = audioVisualization.offsetHeight;
+            audioVisualization.appendChild(canvas);
+
+            const canvasCtx = canvas.getContext('2d');
+            const WIDTH = canvas.width;
+            const HEIGHT = canvas.height;
+
+            function draw() {
+                animationId = requestAnimationFrame(draw);
+                analyser.getByteTimeDomainData(dataArray);
+
+                canvasCtx.fillStyle = 'transparent';
+                canvasCtx.fillRect(0, 0, WIDTH, HEIGHT);
+                canvasCtx.lineWidth = 2;
+                canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                canvasCtx.beginPath();
+
+                const sliceWidth = WIDTH * 1.0 / analyser.frequencyBinCount;
+                let x = 0;
+
+                for(let i = 0; i < analyser.frequencyBinCount; i++) {
+                    const v = dataArray[i] / 128.0;
+                    const y = v * HEIGHT / 2;
+
+                    if(i === 0) {
+                        canvasCtx.moveTo(x, y);
+                    } else {
+                        canvasCtx.lineTo(x, y);
+                    }
+
+                    x += sliceWidth;
+                }
+
+                canvasCtx.lineTo(canvas.width, canvas.height/2);
+                canvasCtx.stroke();
+            }
+
+            draw();
+        }
+
+        // Manejar subida de archivo de audio
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Limpiar grabaciones anteriores
+            if (currentAudioUrl) {
+                URL.revokeObjectURL(currentAudioUrl);
+            }
+
+            currentAudioUrl = URL.createObjectURL(file);
+            audioPlayer.src = currentAudioUrl;
+            audioPlayer.classList.remove('hidden');
+
+            // Enviar el archivo al backend para transcripción
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // Mostrar indicador de carga
+            transcriptionEl.innerHTML = '<p class="text-gray-500 italic">Transcribiendo...</p>';
+            analyzeBtn.disabled = true; // Deshabilitar el botón de análisis
+
+            try {
+                const response = await fetch('audio-preprocessing-api-production.up.railway.app/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                console.log(data); // Ver la respuesta del servidor
+                if (response.ok) {
+                    transcriptionEl.innerHTML = data.transcription; // Muestra la transcripción
+                    analyzeBtn.disabled = false; // Habilitar el botón de análisis
+                } else {
+                    transcriptionEl.innerHTML = `<p class="text-red-500">${data.error}</p>`; // Muestra el error
+                }
+            } catch (error) {
+                console.error('Error al enviar el archivo:', error);
+                transcriptionEl.innerHTML = '<p class="text-red-500">Error al enviar el archivo.</p>';
+            }
+
+            // Limpiar input
+            event.target.value = '';
+        }
+
+
+        // Iniciar transcripción en vivo
+        function startLiveTranscription() {
+            if (!('webkitSpeechRecognition' in window)) {
+                console.log('La API de reconocimiento de voz no está disponible en este navegador');
+                transcriptionStatus.classList.add('hidden');
+                return;
+            }
+
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'es-ES';
+
+            recognition.onstart = function() {
+                console.log('Transcripción en vivo iniciada');
+                transcriptionEl.innerHTML = '<span class="typing-cursor"></span>';
+            };
+
+            recognition.onresult = function(event) {
+                const now = Date.now();
+                
+                // Limitar las actualizaciones a 1 por segundo para mejor rendimiento
+                if (now - lastTranscriptionUpdate < 1000) {
+                    return;
+                }
+                lastTranscriptionUpdate = now;
+                
+                clearTimeout(transcriptionTimeout);
+                
+                let interimTranscript = '';
+                let finalTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                // Actualizar la transcripción en la interfaz
+                if (finalTranscript) {
+                    transcription += finalTranscript;
+                    transcriptionEl.innerHTML = transcription + '<span class="typing-cursor"></span>';
+                } else if (interimTranscript) {
+                    transcriptionEl.innerHTML = transcription + interimTranscript + '<span class="typing-cursor"></span>';
+                }
+                
+                // Si no hay actividad durante 3 segundos, procesar como frase completa
+                transcriptionTimeout = setTimeout(() => {
+                    if (interimTranscript) {
+                        transcription += interimTranscript + ' ';
+                        transcriptionEl.innerHTML = transcription + '<span class="typing-cursor"></span>';
+                    }
+                }, 3000);
+            };
+
+            recognition.onerror = function(event) {
+                console.error('Error en el reconocimiento de voz:', event.error);
+                transcriptionStatus.classList.add('hidden');
+            };
+
+            recognition.onend = function() {
+                if (isRecording) {
+                    // Si aún estamos grabando, reiniciar el reconocimiento
+                    recognition.start();
+                }
+            };
+
+            recognition.start();
+        }
+
+        // Procesar la transcripción final
+        async function processFinalTranscription() {
+            if (!transcription) {
+                transcriptionEl.innerHTML = '<p class="text-gray-500 italic">No se pudo transcribir el audio</p>';
+                return;
+            }
+            
+            // Formatear la transcripción con saltos de línea
+            const formattedTranscription = transcription.split('. ').map(sentence => {
+                return sentence.trim() ? `${sentence}${sentence.endsWith('.') ? '' : '.'}` : '';
+            }).join('');
+            
+            transcriptionEl.innerHTML = formattedTranscription;
+            analyzeBtn.disabled = false;
+
+            // Guardar la transcripción en el servidor
+            await saveTranscriptionToServer(formattedTranscription, "Transcripción en Vivo");
+        }
+
+        // Función para guardar la transcripción en el servidor
+        async function saveTranscriptionToServer(transcription, filename) {
+            const formData = new FormData();
+            formData.append('filename', filename); // Agregar el nombre del archivo
+            formData.append('transcription', transcription);
+            
+            try {
+                const response = await fetch('audio-preprocessing-api-production.up.railway.app/save_transcription', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) {
+                    console.error('Error al guardar la transcripción:', response.statusText);
+                }
+            } catch (error) {
+                console.error('Error al enviar la transcripción al servidor:', error);
+            }
+        }
+        // Analizar sentimiento (simulación)
+        function analyzeSentiment() {
+            // Mostrar sección de resultados
+            resultSection.classList.remove('hidden');
+            emptyResults.classList.add('hidden');
+
+            // Simular análisis de sentimiento (en una aplicación real usarías una API como Google Natural Language)
+            const sentiment = {
+                score: Math.random() * 2 - 1,  // Rango de -1 (negativo) a 1 (positivo)
+                magnitude: Math.random() * 2,  // Intensidad del sentimiento
+                positive: Math.random(),
+                neutral: Math.random(),
+                negative: Math.random(),
+                phrases: [
+                    { text: "Me encanta este producto", sentiment: "positive", score: 0.85 },
+                    { text: "es realmente útil", sentiment: "positive", score: 0.78 },
+                    { text: "Aunque a veces puede ser un poco lento", sentiment: "negative", score: 0.65 },
+                    { text: "en general estoy muy satisfecho con la compra", sentiment: "positive", score: 0.92 },
+                    { text: "Lo recomendaría a otros usuarios", sentiment: "positive", score: 0.88 }
+                ]
+            };
+
+            // Normalizar los porcentajes para que sumen 1
+            const total = sentiment.positive + sentiment.neutral + sentiment.negative;
+            sentiment.positive = sentiment.positive / total;
+            sentiment.neutral = sentiment.neutral / total;
+            sentiment.negative = sentiment.negative / total;
+
+            // Actualizar UI con resultados
+            updateSentimentUI(sentiment);
+
+            // Crear gráfico
+            createSentimentChart(sentiment);
+
+            // Mostrar frases clave
+            showKeyPhrases(sentiment.phrases);
+        }
+
+        // Actualizar UI con resultados del sentimiento
+        function updateSentimentUI(sentiment) {
+            // Determinar sentimiento general
+            let overallSentiment;
+            let iconClass;
+            let bgColor;
+
+            if (sentiment.score > 0.25) {
+                overallSentiment = "Positivo";
+                iconClass = "fa-smile text-green-500";
+                bgColor = "bg-green-50 border-l-green-500";
+            } else if (sentiment.score < -0.25) {
+                overallSentiment = "Negativo";
+                iconClass = "fa-frown text-red-500";
+                bgColor = "bg-red-50 border-l-red-500";
+            } else {
+                overallSentiment = "Neutral";
+                iconClass = "fa-meh text-yellow-500";
+                bgColor = "bg-yellow-50 border-l-yellow-500";
+            }
+
+            // Actualizar elementos
+            sentimentIcon.className = `fas ${iconClass} text-4xl mr-3`;
+            sentimentLabel.textContent = overallSentiment;
+            sentimentConfidence.textContent = `Confianza: ${Math.round(sentiment.magnitude * 100)}%`;
+            sentimentScore.textContent = sentiment.score.toFixed(2);
+            sentimentScore.className = `text-3xl font-bold ${
+                sentiment.score > 0.25 ? 'text-green-600' : 
+                sentiment.score < -0.25 ? 'text-red-600' : 'text-yellow-600'
+            }`;
+
+            // Actualizar porcentajes
+            positivePercent.textContent = `${Math.round(sentiment.positive * 100)}%`;
+            neutralPercent.textContent = `${Math.round(sentiment.neutral * 100)}%`;
+            negativePercent.textContent = `${Math.round(sentiment.negative * 100)}%`;
+
+            // Estilizar el contenedor de resultados
+            const resultContainer = document.getElementById('sentimentResult');
+            resultContainer.className = 'p-4 rounded-lg flex items-center justify-between mb-4';
+            if (sentiment.score > 0.25) {
+                resultContainer.classList.add('bg-green-50', 'border-l-green-500', 'border-l-4');
+            } else if (sentiment.score < -0.25) {
+                resultContainer.classList.add('bg-red-50', 'border-l-red-500', 'border-l-4');
+            } else {
+                resultContainer.classList.add('bg-yellow-50', 'border-l-yellow-500', 'border-l-4');
+            }
+        }
+
+        // Crear gráfico de sentimientos
+        function createSentimentChart(sentiment) {
+            const ctx = document.getElementById('sentimentChart').getContext('2d');
+
+            // Destruir gráfico anterior si existe
+            if (sentimentChart) {
+                sentimentChart.destroy();
+            }
+
+            sentimentChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Positivo', 'Neutral', 'Negativo'],
+                    datasets: [{
+                        data: [
+                            Math.round(sentiment.positive * 100),
+                            Math.round(sentiment.neutral * 100),
+                            Math.round(sentiment.negative * 100)
+                        ],
+                        backgroundColor: [
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(156, 163, 175, 0.8)',
+                            'rgba(239, 68, 68, 0.8)'
+                        ],
+                        borderColor: [
+                            'rgba(16, 185, 129, 1)',
+                            'rgba(156, 163, 175, 1)',
+                            'rgba(239, 68, 68, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.label}: ${context.raw}%`;
+                                }
+                            }
+                        }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
+
+        // Mostrar frases clave con su sentimiento
+        function showKeyPhrases(phrases) {
+            keyPhrases.innerHTML = '';
+
+            phrases.forEach(phrase => {
+                const div = document.createElement('div');
+                div.className = `p-3 rounded-lg mb-2 sentiment-${phrase.sentiment}`;
+
+                const p = document.createElement('p');
+                p.className = 'font-medium';
+                p.textContent = `"${phrase.text}"`;
+
+                const span = document.createElement('p');
+                span.className = 'text-sm text-gray-600';
+                span.textContent = `${phrase.sentiment === 'positive' ? 'Positivo' : phrase.sentiment === 'negative' ? 'Negativo' : 'Neutral'} (${Math.round(phrase.score * 100)}%)`;
+
+                div.appendChild(p);
+                div.appendChild(span);
+                keyPhrases.appendChild(div);
+            });
+        }
+    </script>
+</body>
+</html>

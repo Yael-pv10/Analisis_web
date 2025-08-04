@@ -1,51 +1,72 @@
-from flask import Flask, request, jsonify, send_file
-import speech_recognition as sr
-import pandas as pd
-import os
+from flask import Flask, request, jsonify, session, redirect, url_for
 from flask_cors import CORS
-from pydub import AudioSegment
+from flask_dance.contrib.google import make_google_blueprint, google
+import os
 import uuid
-
-# Preprocesamiento
+import pandas as pd
+import speech_recognition as sr
+from pydub import AudioSegment
 import nltk
 import spacy
-import string
-from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
+import string
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-# Inicializaciones
 nltk.download('punkt')
 nltk.download('punkt_tab')
 nltk.download('stopwords')
-nlp = spacy.load("es_core_news_sm")
-stop_words = set(stopwords.words('spanish'))
+spacy_es = spacy.load('es_core_news_sm')
 
-# Configuración del servidor
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
 
-AUDIO_DIR = 'audios'
-TRANSCRIPTIONS_CSV = 'transcriptions.csv'
-PROCESSED_CSV = 'processed_transcriptions.csv'
-os.makedirs(AUDIO_DIR, exist_ok=True)
+app.secret_key = os.environ.get('FLASK_CLIENT_KEY')
 
+# OAuth Google
+blueprint = make_google_blueprint(
+    client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+    client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
+    redirect_url="/login/google/authorized",
+    scope=["profile", "email"]
+)
+app.register_blueprint(blueprint, url_prefix="/login")
+
+BASE_DIR = 'usuarios'
+os.makedirs(BASE_DIR, exist_ok=True)
+
+@app.route('/login')
+def login():
+    if not google.authorized:
+        return redirect(url_for("google.login"))
+    resp = google.get("/oauth2/v2/userinfo")
+    user_info = resp.json()
+    email = user_info['email']
+    session['user_email'] = email
+    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+    os.makedirs(user_folder, exist_ok=True)
+    return redirect('/')
 
 @app.route('/upload', methods=['POST'])
 def upload_audio():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+    if 'file' not in request.files or 'project' not in request.form:
+        return jsonify({'error': 'Missing file or project name'}), 400
+
+    email = session.get('user_email')
+    if not email:
+        return jsonify({'error': 'Unauthorized'}), 401
 
     file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-
+    project = request.form['project']
     original_ext = file.filename.split('.')[-1].lower()
     unique_name = f"{uuid.uuid4()}.{original_ext}"
-    audio_path = os.path.join(AUDIO_DIR, unique_name)
+
+    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+    project_folder = os.path.join(user_folder, project)
+    os.makedirs(project_folder, exist_ok=True)
+    audio_path = os.path.join(project_folder, unique_name)
     file.save(audio_path)
 
-    # Convertir webm/mp3 a wav
     if original_ext in ['webm', 'mp3']:
         audio_wav_path = audio_path.rsplit('.', 1)[0] + '.wav'
         try:
@@ -53,13 +74,11 @@ def upload_audio():
             sound.export(audio_wav_path, format='wav')
             audio_path = audio_wav_path
         except Exception as e:
-            return jsonify({'error': f'Error al convertir el audio: {e}'}), 500
+            return jsonify({'error': f'Error al convertir audio: {e}'}), 500
 
     transcription = transcribe_audio(audio_path)
-    save_transcription_to_csv(file.filename, transcription)
-
+    save_transcription_to_csv(project_folder, file.filename, transcription)
     return jsonify({'transcription': transcription}), 200
-
 
 def transcribe_audio(audio_path):
     recognizer = sr.Recognizer()
@@ -67,86 +86,53 @@ def transcribe_audio(audio_path):
         audio = recognizer.record(source)
         try:
             return recognizer.recognize_google(audio, language='es-ES')
-        except sr.UnknownValueError:
-            return "No se pudo entender el audio"
-        except sr.RequestError as e:
-            return f"Error en el servicio de reconocimiento: {e}"
+        except:
+            return "[No se pudo transcribir]"
 
-
-def save_transcription_to_csv(filename, transcription):
+def save_transcription_to_csv(folder, filename, transcription):
+    csv_path = os.path.join(folder, 'transcriptions.csv')
     df = pd.DataFrame([[filename, transcription]], columns=['filename', 'transcription'])
-    if not os.path.isfile(TRANSCRIPTIONS_CSV):
-        df.to_csv(TRANSCRIPTIONS_CSV, index=False)
+    if not os.path.isfile(csv_path):
+        df.to_csv(csv_path, index=False)
     else:
-        df.to_csv(TRANSCRIPTIONS_CSV, mode='a', header=False, index=False)
+        df.to_csv(csv_path, mode='a', header=False, index=False)
 
+@app.route('/preprocesamiento', methods=['GET'])
+def preprocesamiento():
+    email = session.get('user_email')
+    project = request.args.get('project')
+    if not email or not project:
+        return jsonify({'error': 'Missing user session or project'}), 400
 
-@app.route('/save_transcription', methods=['POST'])
-def save_transcription():
-    transcription = request.form.get('transcription')
-    filename = request.form.get('filename', 'transcripcion_manual')
-    if transcription:
-        save_transcription_to_csv(filename, transcription)
-        return jsonify({'message': 'Transcripción guardada exitosamente'}), 200
-    return jsonify({'error': 'No se recibió transcripción'}), 400
+    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+    project_folder = os.path.join(user_folder, project)
+    csv_path = os.path.join(project_folder, 'transcriptions.csv')
 
+    if not os.path.isfile(csv_path):
+        return jsonify({'error': 'No transcriptions found'}), 404
 
-@app.route('/preprocessing_steps', methods=['GET'])
-def preprocessing_steps():
-    if not os.path.exists(TRANSCRIPTIONS_CSV):
-        return jsonify({'error': 'No hay archivo de transcripciones'}), 404
-
-    df = pd.read_csv(TRANSCRIPTIONS_CSV)
-    raw_texts = df['transcription'].tolist()
-    results = []
-    processed_texts = []
-
-    for text in raw_texts:
-        step = {'original': text}
-
-        # Minúsculas
-        text_lower = text.lower()
-        step['lower'] = text_lower
-
-        # Tokenización
-        tokens = word_tokenize(text_lower)
-        step['tokens'] = tokens
-
-        # Eliminar signos de puntuación y stopwords
-        tokens_clean = [t for t in tokens if t.isalpha() and t not in stop_words]
-        step['no_stopwords'] = tokens_clean
-
-        # Lematización con spaCy
-        doc = nlp(' '.join(tokens_clean))
-        lemmatized = [token.lemma_ for token in doc]
-        step['lemmatized'] = lemmatized
-
-        processed_texts.append(' '.join(lemmatized))
-        results.append(step)
+    df = pd.read_csv(csv_path)
+    df['lowercase'] = df['transcription'].str.lower()
+    df['tokens'] = df['lowercase'].apply(word_tokenize)
+    stop_words = set(stopwords.words('spanish'))
+    df['no_stopwords'] = df['tokens'].apply(lambda tokens: [w for w in tokens if w not in stop_words and w not in string.punctuation])
+    df['lemmas'] = df['no_stopwords'].apply(lambda tokens: [spacy_es(word)[0].lemma_ for word in tokens])
+    df['final'] = df['lemmas'].apply(lambda tokens: ' '.join(tokens))
 
     # TF-IDF
     vectorizer = TfidfVectorizer()
-    tfidf_matrix = vectorizer.fit_transform(processed_texts)
+    tfidf_matrix = vectorizer.fit_transform(df['final'])
     tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=vectorizer.get_feature_names_out())
 
-    # Guardar CSV final
-    df['processed'] = processed_texts
-    df.to_csv(PROCESSED_CSV, index=False)
-
-    return jsonify({
-        'steps': results,
+    result = {
+        'original': df[['filename', 'transcription']].to_dict(orient='records'),
+        'lowercase': df['lowercase'].tolist(),
+        'tokens': df['tokens'].tolist(),
+        'no_stopwords': df['no_stopwords'].tolist(),
+        'lemmas': df['lemmas'].tolist(),
         'tfidf': tfidf_df.to_dict(orient='records')
-    })
-
-
-@app.route('/download_processed_csv', methods=['GET'])
-def download_processed_csv():
-    if os.path.exists(PROCESSED_CSV):
-        return send_file(PROCESSED_CSV, as_attachment=True)
-    return jsonify({'error': 'Archivo procesado no encontrado'}), 404
-
+    }
+    return jsonify(result)
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
-
+    app.run(debug=True)
