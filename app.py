@@ -13,17 +13,18 @@ from nltk.corpus import stopwords
 import string
 from sklearn.feature_extraction.text import TfidfVectorizer
 
+# Descarga de recursos necesarios
 nltk.download('punkt')
 nltk.download('punkt_tab')
 nltk.download('stopwords')
 spacy_es = spacy.load('es_core_news_sm')
 
+# Configuración base
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
-
 app.secret_key = os.environ.get('FLASK_CLIENT_KEY')
 
-# OAuth Google
+# Configurar OAuth Google
 blueprint = make_google_blueprint(
     client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
     client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
@@ -32,21 +33,32 @@ blueprint = make_google_blueprint(
 )
 app.register_blueprint(blueprint, url_prefix="/login")
 
+# Carpeta base para usuarios
 BASE_DIR = 'usuarios'
 os.makedirs(BASE_DIR, exist_ok=True)
 
+# Ruta para login con Google
 @app.route('/login')
 def login():
     if not google.authorized:
         return redirect(url_for("google.login"))
     resp = google.get("/oauth2/v2/userinfo")
+    if not resp.ok:
+        return "Error de autenticación", 403
     user_info = resp.json()
     email = user_info['email']
     session['user_email'] = email
     user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
     os.makedirs(user_folder, exist_ok=True)
-    return redirect('/')
+    return redirect(f"analisis-web.vercel.app/dashboard.html?email={email}")
 
+# Ruta para logout
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect("analisis-web.vercel.app/index.html")
+
+# Ruta para subir audios
 @app.route('/upload', methods=['POST'])
 def upload_audio():
     if 'file' not in request.files or 'project' not in request.form:
@@ -80,6 +92,7 @@ def upload_audio():
     save_transcription_to_csv(project_folder, file.filename, transcription)
     return jsonify({'transcription': transcription}), 200
 
+# Transcripción
 def transcribe_audio(audio_path):
     recognizer = sr.Recognizer()
     with sr.AudioFile(audio_path) as source:
@@ -89,6 +102,7 @@ def transcribe_audio(audio_path):
         except:
             return "[No se pudo transcribir]"
 
+# Guardar transcripción en CSV
 def save_transcription_to_csv(folder, filename, transcription):
     csv_path = os.path.join(folder, 'transcriptions.csv')
     df = pd.DataFrame([[filename, transcription]], columns=['filename', 'transcription'])
@@ -97,6 +111,7 @@ def save_transcription_to_csv(folder, filename, transcription):
     else:
         df.to_csv(csv_path, mode='a', header=False, index=False)
 
+# Preprocesamiento completo paso a paso
 @app.route('/preprocesamiento', methods=['GET'])
 def preprocesamiento():
     email = session.get('user_email')
@@ -134,5 +149,6 @@ def preprocesamiento():
     }
     return jsonify(result)
 
+# Ejecutar servidor
 if __name__ == '__main__':
     app.run(debug=True)
