@@ -16,7 +16,7 @@ from nltk.corpus import stopwords
 
 # Inicializaciones
 nltk.download('punkt')
-nltk.download('punkt_tab')
+#nltk.download('punkt_tab')
 nltk.download('stopwords')
 nlp = spacy.load("es_core_news_sm")
 stop_words = set(stopwords.words('spanish'))
