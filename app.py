@@ -15,6 +15,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 # Descargas necesarias
 nltk.download('punkt')
+nltk.download('punkt_tab')
 nltk.download('stopwords')
 spacy_es = spacy.load('es_core_news_sm')
 
