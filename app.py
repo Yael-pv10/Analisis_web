@@ -31,7 +31,7 @@ os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 
 # Inicialización de Flask
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", str(uuid.uuid4()))
+app.secret_key = os.environ.get("FLASK_CLIENT_KEY", str(uuid.uuid4()))
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
@@ -39,8 +39,8 @@ CORS(app, supports_credentials=True)
 
 # Blueprint para autenticación con Google
 google_bp = make_google_blueprint(
-    client_id=os.getenv("GOOGLE_CLIENT_ID"),
-    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    client_id=os.getenv("GOOGLE_OAUTH_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
     scope=["profile", "email"],
     redirect_url="https://audio-preprocessing-api-production.up.railway.app/login/google/authorized"
 )
