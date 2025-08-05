@@ -41,11 +41,13 @@
     let user = null;
 
     function handleCredentialResponse(response) {
-      const data = parseJwt(response.credential);
+      const token = response.credential;
+      const data = parseJwt(token);
       user = {
         id: data.sub,
         name: data.name,
-        email: data.email
+        email: data.email,
+        token: token
       };
 
       document.getElementById("g_id_onload").classList.add("hidden");
@@ -54,6 +56,7 @@
       document.getElementById("user-email").textContent = user.email;
       document.getElementById("project-section").classList.remove("hidden");
 
+      sendTokenToBackend(user.token); // opcional
       loadProjects();
     }
 
@@ -69,6 +72,22 @@
     function signOut() {
       user = null;
       location.reload();
+    }
+
+    async function sendTokenToBackend(token) {
+      try {
+        const res = await fetch("https://audio-preprocessing-api-production.up.railway.app/auth/google", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ credential: token })
+        });
+        const data = await res.json();
+        console.log("Respuesta del backend:", data);
+      } catch (e) {
+        console.error("Error enviando token al backend:", e);
+      }
     }
 
     async function loadProjects() {

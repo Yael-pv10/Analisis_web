@@ -14,30 +14,26 @@ import string
 from sklearn.feature_extraction.text import TfidfVectorizer
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-
-# Descargas necesarias
+# Descargar recursos
 nltk.download('punkt')
-nltk.download('punkt_tab')
 nltk.download('stopwords')
 spacy_es = spacy.load('es_core_news_sm')
 
-# Configuración de entorno para HTTPS
+# Configuración segura
 if os.environ.get("FLASK_ENV") == "development":
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 else:
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'
-
 os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 
-# Inicialización de Flask
+# Inicializar app
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_CLIENT_KEY", str(uuid.uuid4()))
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-
 CORS(app, supports_credentials=True)
 
-# Blueprint para autenticación con Google
+# Google OAuth
 google_bp = make_google_blueprint(
     client_id=os.getenv("GOOGLE_OAUTH_CLIENT_ID"),
     client_secret=os.getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
@@ -46,13 +42,36 @@ google_bp = make_google_blueprint(
 )
 app.register_blueprint(google_bp, url_prefix="/login")
 
-# Ruta que maneja el callback después del login
+# Rutas base
+BASE_DIR = 'usuarios'
+os.makedirs(BASE_DIR, exist_ok=True)
+
+@app.route("/")
+def index():
+    return "API funcionando con login de Google"
+
+# Ruta para obtener usuario logueado (útil en frontend)
+@app.route("/me")
+def me():
+    if "user_email" not in session:
+        return jsonify({"error": "No autenticado"}), 401
+    return jsonify({
+        "email": session["user_email"],
+        "name": session.get("name"),
+        "picture": session.get("picture")
+    })
+
+# Ruta callback de login con Google
 @app.route("/login/google/authorized")
 def google_login():
     if not google.authorized:
         return redirect(url_for("google.login"))
 
-    resp = google.get("/oauth2/v2/userinfo")
+    try:
+        resp = google.get("/oauth2/v2/userinfo")
+    except Exception as e:
+        return f"Error de token: {str(e)}", 500
+
     if not resp.ok:
         return "Error al obtener información del usuario", 400
 
@@ -61,42 +80,41 @@ def google_login():
     name = user_info.get("name")
     picture = user_info.get("picture")
 
-    session['email'] = email
+    # Guardar en sesión
+    session['user_email'] = email
     session['name'] = name
     session['picture'] = picture
 
-    return jsonify({"email": email, "name": name, "picture": picture})
+    # Crear carpeta de usuario
+    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+    os.makedirs(user_folder, exist_ok=True)
 
-# Carpeta base de usuarios
-BASE_DIR = 'usuarios'
-os.makedirs(BASE_DIR, exist_ok=True)
+    # Redirigir al dashboard
+    return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
 
-# Ruta: iniciar sesión
 @app.route('/login')
 def login():
     if not google.authorized:
         return redirect(url_for("google.login"))
-    resp = google.get("/oauth2/v2/userinfo")
+
+    try:
+        resp = google.get("/oauth2/v2/userinfo")
+    except Exception as e:
+        return f"Token expirado o inválido: {str(e)}", 401
+
     if not resp.ok:
         return "Error de autenticación", 403
+
     user_info = resp.json()
     email = user_info['email']
     session['user_email'] = email
-
-    # Crear carpeta de usuario si no existe
-    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
-    os.makedirs(user_folder, exist_ok=True)
-
-    # Redirigir al dashboard del frontend
     return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
 
-# Ruta: cerrar sesión
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect("https://analisis-web.vercel.app/index.html")
 
-# Ruta: subir audios
 @app.route('/upload', methods=['POST'])
 def upload_audio():
     if 'file' not in request.files or 'project' not in request.form:
@@ -130,7 +148,6 @@ def upload_audio():
     save_transcription_to_csv(project_folder, file.filename, transcription)
     return jsonify({'transcription': transcription}), 200
 
-# Función: transcribir audio a texto
 def transcribe_audio(audio_path):
     recognizer = sr.Recognizer()
     with sr.AudioFile(audio_path) as source:
@@ -140,7 +157,6 @@ def transcribe_audio(audio_path):
         except:
             return "[No se pudo transcribir]"
 
-# Función: guardar transcripción en CSV
 def save_transcription_to_csv(folder, filename, transcription):
     csv_path = os.path.join(folder, 'transcriptions.csv')
     df = pd.DataFrame([[filename, transcription]], columns=['filename', 'transcription'])
@@ -149,7 +165,6 @@ def save_transcription_to_csv(folder, filename, transcription):
     else:
         df.to_csv(csv_path, mode='a', header=False, index=False)
 
-# Ruta: preprocesamiento de texto
 @app.route('/preprocesamiento', methods=['GET'])
 def preprocesamiento():
     email = session.get('user_email')
@@ -186,12 +201,7 @@ def preprocesamiento():
     }
     return jsonify(result)
 
-    # Puedes agregar una ruta simple de prueba
-    @app.route("/")
-    def index():
-        return "API de preprocesamiento con login Google activo"
-
-# Inicio del servidor compatible con Railway
+# Iniciar app
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
