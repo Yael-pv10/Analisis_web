@@ -13,18 +13,17 @@ from nltk.corpus import stopwords
 import string
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-# Descarga de recursos necesarios
+# Descargas necesarias
 nltk.download('punkt')
-nltk.download('punkt_tab')
 nltk.download('stopwords')
 spacy_es = spacy.load('es_core_news_sm')
 
-# Configuración base
+# Inicialización de la app
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
-app.secret_key = os.environ.get('FLASK_CLIENT_KEY')
+CORS(app, origins=["https://analisis-web.vercel.app"], supports_credentials=True)
+app.secret_key = os.environ.get('FLASK_CLIENT_KEY', 'clave_defecto')
 
-# Configurar OAuth Google
+# OAuth con Google (usando Flask-Dance)
 blueprint = make_google_blueprint(
     client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
     client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
@@ -33,11 +32,11 @@ blueprint = make_google_blueprint(
 )
 app.register_blueprint(blueprint, url_prefix="/login")
 
-# Carpeta base para usuarios
+# Carpeta base de usuarios
 BASE_DIR = 'usuarios'
 os.makedirs(BASE_DIR, exist_ok=True)
 
-# Ruta para login con Google
+# Ruta: iniciar sesión
 @app.route('/login')
 def login():
     if not google.authorized:
@@ -48,17 +47,21 @@ def login():
     user_info = resp.json()
     email = user_info['email']
     session['user_email'] = email
+
+    # Crear carpeta de usuario si no existe
     user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
     os.makedirs(user_folder, exist_ok=True)
+
+    # Redirigir al dashboard del frontend
     return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
 
-# Ruta para logout
+# Ruta: cerrar sesión
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect("https://analisis-web.vercel.app/index.html")
 
-# Ruta para subir audios
+# Ruta: subir audios
 @app.route('/upload', methods=['POST'])
 def upload_audio():
     if 'file' not in request.files or 'project' not in request.form:
@@ -92,7 +95,7 @@ def upload_audio():
     save_transcription_to_csv(project_folder, file.filename, transcription)
     return jsonify({'transcription': transcription}), 200
 
-# Transcripción
+# Función: transcribir audio a texto
 def transcribe_audio(audio_path):
     recognizer = sr.Recognizer()
     with sr.AudioFile(audio_path) as source:
@@ -102,7 +105,7 @@ def transcribe_audio(audio_path):
         except:
             return "[No se pudo transcribir]"
 
-# Guardar transcripción en CSV
+# Función: guardar transcripción en CSV
 def save_transcription_to_csv(folder, filename, transcription):
     csv_path = os.path.join(folder, 'transcriptions.csv')
     df = pd.DataFrame([[filename, transcription]], columns=['filename', 'transcription'])
@@ -111,7 +114,7 @@ def save_transcription_to_csv(folder, filename, transcription):
     else:
         df.to_csv(csv_path, mode='a', header=False, index=False)
 
-# Preprocesamiento completo paso a paso
+# Ruta: preprocesamiento de texto
 @app.route('/preprocesamiento', methods=['GET'])
 def preprocesamiento():
     email = session.get('user_email')
@@ -134,7 +137,6 @@ def preprocesamiento():
     df['lemmas'] = df['no_stopwords'].apply(lambda tokens: [spacy_es(word)[0].lemma_ for word in tokens])
     df['final'] = df['lemmas'].apply(lambda tokens: ' '.join(tokens))
 
-    # TF-IDF
     vectorizer = TfidfVectorizer()
     tfidf_matrix = vectorizer.fit_transform(df['final'])
     tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=vectorizer.get_feature_names_out())
@@ -149,7 +151,7 @@ def preprocesamiento():
     }
     return jsonify(result)
 
-# Ejecutar servidor
+# Inicio del servidor compatible con Railway
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
