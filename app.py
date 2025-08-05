@@ -24,6 +24,10 @@ app = Flask(__name__)
 CORS(app, origins=["https://analisis-web.vercel.app"], supports_credentials=True)
 app.secret_key = os.environ.get('FLASK_CLIENT_KEY', 'clave_defecto')
 
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'  # Desactiva http (por seguridad)
+os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
+os.environ['OAUTHLIB_REDIRECT_URI'] = 'https://audio-preprocessing-api-production.up.railway.app/login/google/authorized'
+
 # OAuth con Google (usando Flask-Dance)
 blueprint = make_google_blueprint(
     client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
