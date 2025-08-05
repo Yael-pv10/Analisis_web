@@ -13,6 +13,7 @@ from nltk.corpus import stopwords
 import string
 from sklearn.feature_extraction.text import TfidfVectorizer
 from werkzeug.middleware.proxy_fix import ProxyFix
+from oauthlib.oauth2.rfc6749.errors import TokenExpiredError
 
 # Descargar recursos
 nltk.download('punkt')
@@ -99,17 +100,28 @@ def login():
 
     try:
         resp = google.get("/oauth2/v2/userinfo")
+        if not resp.ok:
+            # Token caducado o error de conexión
+            return redirect(url_for("google.login"))
+    except TokenExpiredError:
+        # El token ya no es válido
+        return redirect(url_for("google.login"))
     except Exception as e:
-        return f"Token expirado o inválido: {str(e)}", 401
-
-    if not resp.ok:
-        return "Error de autenticación", 403
+        # Otro error inesperado
+        return f"Error inesperado: {str(e)}", 500
 
     user_info = resp.json()
     email = user_info['email']
     session['user_email'] = email
-    return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
+    session['name'] = user_info.get('name')
+    session['picture'] = user_info.get('picture')
 
+    # Crear carpeta del usuario
+    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+    os.makedirs(user_folder, exist_ok=True)
+
+    # Redirigir al dashboard del frontend
+    return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
 @app.route('/logout')
 def logout():
     session.clear()
