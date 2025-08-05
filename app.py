@@ -28,7 +28,7 @@ app.secret_key = os.environ.get('FLASK_CLIENT_KEY')
 blueprint = make_google_blueprint(
     client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
     client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
-    redirect_url="/login/google/authorized",
+    redirect_url="https://audio-preprocessing-api-production.up.railway.app/login/google/authorized",
     scope=["profile", "email"]
 )
 app.register_blueprint(blueprint, url_prefix="/login")
@@ -50,13 +50,13 @@ def login():
     session['user_email'] = email
     user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
     os.makedirs(user_folder, exist_ok=True)
-    return redirect(f"analisis-web.vercel.app/dashboard.html?email={email}")
+    return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
 
 # Ruta para logout
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect("analisis-web.vercel.app/index.html")
+    return redirect("https://analisis-web.vercel.app/index.html")
 
 # Ruta para subir audios
 @app.route('/upload', methods=['POST'])
