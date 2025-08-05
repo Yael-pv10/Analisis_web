@@ -19,23 +19,51 @@ nltk.download('punkt_tab')
 nltk.download('stopwords')
 spacy_es = spacy.load('es_core_news_sm')
 
-# Inicialización de la app
-app = Flask(__name__)
-CORS(app, origins=["https://analisis-web.vercel.app"], supports_credentials=True)
-app.secret_key = os.environ.get('FLASK_CLIENT_KEY', 'clave_defecto')
+# Configuración de entorno para HTTPS
+if os.environ.get("FLASK_ENV") == "development":
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+else:
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'
 
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'  # Desactiva http (por seguridad)
 os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
-os.environ['OAUTHLIB_REDIRECT_URI'] = 'https://audio-preprocessing-api-production.up.railway.app/login/google/authorized'
 
-# OAuth con Google (usando Flask-Dance)
-blueprint = make_google_blueprint(
-    client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
-    client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
-    redirect_url="https://audio-preprocessing-api-production.up.railway.app/login/google/authorized",
-    scope=["profile", "email"]
+# Inicialización de Flask
+app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", str(uuid.uuid4()))
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+CORS(app, supports_credentials=True)
+
+# Blueprint para autenticación con Google
+google_bp = make_google_blueprint(
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    scope=["profile", "email"],
+    redirect_url="https://audio-preprocessing-api-production.up.railway.app/login/google/authorized"
 )
-app.register_blueprint(blueprint, url_prefix="/login")
+app.register_blueprint(google_bp, url_prefix="/login")
+
+# Ruta que maneja el callback después del login
+@app.route("/login/google/authorized")
+def google_login():
+    if not google.authorized:
+        return redirect(url_for("google.login"))
+
+    resp = google.get("/oauth2/v2/userinfo")
+    if not resp.ok:
+        return "Error al obtener información del usuario", 400
+
+    user_info = resp.json()
+    email = user_info.get("email")
+    name = user_info.get("name")
+    picture = user_info.get("picture")
+
+    session['email'] = email
+    session['name'] = name
+    session['picture'] = picture
+
+    return jsonify({"email": email, "name": name, "picture": picture})
 
 # Carpeta base de usuarios
 BASE_DIR = 'usuarios'
@@ -155,6 +183,11 @@ def preprocesamiento():
         'tfidf': tfidf_df.to_dict(orient='records')
     }
     return jsonify(result)
+
+    # Puedes agregar una ruta simple de prueba
+    @app.route("/")
+    def index():
+        return "API de preprocesamiento con login Google activo"
 
 # Inicio del servidor compatible con Railway
 if __name__ == '__main__':
