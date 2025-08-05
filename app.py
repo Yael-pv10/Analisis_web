@@ -12,6 +12,8 @@ from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 import string
 from sklearn.feature_extraction.text import TfidfVectorizer
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 
 # Descargas necesarias
 nltk.download('punkt')
