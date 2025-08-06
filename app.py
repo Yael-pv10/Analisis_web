@@ -103,10 +103,10 @@ def login():
     os.makedirs(user_folder, exist_ok=True)
     return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
 
-   @app.route('/logout')
-   def logout():
-       session.clear()
-       return jsonify({"message": "Logout successful"}), 200
+@app.route('/logout')
+def logout():
+    session.clear()
+    return jsonify({"message": "Logout successful"}), 200
    
 
 @app.route('/upload', methods=['POST'])
