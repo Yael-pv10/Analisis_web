@@ -664,19 +664,19 @@
     `;
   }
 
-  async function loadUser() {
-    try {
-      const res = await fetch("/me");
-      if (!res.ok) throw new Error("No autenticado");
-      const data = await res.json();
-      document.getElementById("user-name").textContent = data.nombre || "Usuario";
-      await loadProjects();
-    } catch (err) {
-      console.error("Error al cargar el usuario:", err);
-      showNotification("Redirigiendo a login...", "warning");
-      setTimeout(() => window.location.href = "/login.html", 1500);
-    }
-  }
+  // async function loadUser() {
+  //   try {
+  //     const res = await fetch("/me");
+  //     if (!res.ok) throw new Error("No autenticado");
+  //     const data = await res.json();
+  //     document.getElementById("user-name").textContent = data.nombre || "Usuario";
+  //     await loadProjects();
+  //   } catch (err) {
+  //     console.error("Error al cargar el usuario:", err);
+  //     showNotification("Redirigiendo a login...", "warning");
+  //     setTimeout(() => window.location.href = "/login.html", 1500);
+  //   }
+  // }
 
   document.addEventListener("DOMContentLoaded", () => {
     loadUser();
