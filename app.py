@@ -47,14 +47,14 @@ google_bp = make_google_blueprint(
     client_id=os.getenv("GOOGLE_OAUTH_CLIENT_ID"),
     client_secret=os.getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
     redirect_to='google_login',
-    scope=["profile", "email"],
-    state=session.get('state')
+    scope=["profile", "email"]
 )
 app.register_blueprint(google_bp, url_prefix="/google_login")
 
 # Rutas base
 BASE_DIR = 'usuarios'
 os.makedirs(BASE_DIR, exist_ok=True)
+
 
 @app.route("/")
 def index():
@@ -132,7 +132,7 @@ def logout():
     return jsonify({"message": "Logout successful"}), 200
    
 def generate_state():
-       return ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=16))
 
 @app.route('/upload', methods=['POST'])
 def upload_audio():
