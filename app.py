@@ -32,7 +32,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_CLIENT_KEY", str(uuid.uuid4()))
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-CORS(app, supports_credentials=True)
+CORS(app, supports_credentials=True, origins=["https://analisis-web.vercel.app"])
 
 # Google OAuth
 google_bp = make_google_blueprint(
