@@ -137,6 +137,29 @@ def upload_audio():
     save_transcription_to_csv(project_folder, file.filename, transcription)
     return jsonify({'transcription': transcription}), 200
 
+@app.route('/create_project', methods=['POST'])
+def create_project():
+    if "user_email" not in session:
+        return jsonify({"error": "No autenticado"}), 401
+    
+    data = request.get_json()
+    project_name = data.get('nombre')
+    
+    if not project_name:
+        return jsonify({"error": "Nombre de proyecto requerido"}), 400
+    
+    email = session['user_email']
+    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+    project_folder = os.path.join(user_folder, project_name)
+    
+    try:
+        os.makedirs(project_folder, exist_ok=False)  # exist_ok=False para evitar sobrescritura
+        return jsonify({"message": f"Proyecto '{project_name}' creado"}), 201
+    except FileExistsError:
+        return jsonify({"error": "El proyecto ya existe"}), 409
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # Obtener lista de proyectos del usuario
 @app.route('/proyectos', methods=['GET'])
 def get_proyectos():
@@ -145,14 +168,24 @@ def get_proyectos():
         return jsonify({'error': 'Usuario no autenticado'}), 401
 
     user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+    
     if not os.path.isdir(user_folder):
         return jsonify({'projects': []})
-
-    projects = [
-        name for name in os.listdir(user_folder)
-        if os.path.isdir(os.path.join(user_folder, name))
-    ]
+    
+    projects = []
+    for name in os.listdir(user_folder):
+        full_path = os.path.join(user_folder, name)
+        if os.path.isdir(full_path):
+            # Obtener información adicional del proyecto
+            num_files = len(os.listdir(full_path)) if os.path.exists(full_path) else 0
+            projects.append({
+                'name': name,
+                'file_count': num_files,
+                'created_at': os.path.getctime(full_path)
+            })
+    
     return jsonify({'projects': projects})
+
 
 # Obtener transcripciones de un proyecto específico
 @app.route('/proyecto/<nombre>/transcripciones', methods=['GET'])
@@ -219,6 +252,24 @@ def preprocesamiento():
         'tfidf': tfidf_df.to_dict(orient='records')
     }
     return jsonify(result)
+
+@app.route('/proyecto/<nombre>', methods=['DELETE'])
+def delete_project(nombre):
+    email = session.get('user_email')
+    if not email:
+        return jsonify({'error': 'Usuario no autenticado'}), 401
+
+    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+    project_folder = os.path.join(user_folder, nombre)
+    
+    try:
+        if not os.path.exists(project_folder):
+            return jsonify({'error': 'Proyecto no encontrado'}), 404
+            
+        shutil.rmtree(project_folder)
+        return jsonify({'message': f'Proyecto {nombre} eliminado'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
