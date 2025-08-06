@@ -294,34 +294,6 @@ async function loadProjects() {
 async function createProject() {
   const name = newProjectName.value.trim();
   if (!name) return showNotification("Por favor ingresa un nombre para el proyecto", "warning");
-
-  try {
-    const res = await fetch(`${API_BASE}/create_project`, {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-      },
-      credentials: "include",  // Asegúrate de incluir esto
-      body: JSON.stringify({ nombre: name }),
-    });
-
-    const data = await res.json();
-    
-    if (!res.ok) throw new Error(data.error || "Error en la creación");
-
-    showNotification(`Proyecto "${name}" creado con éxito`, "success");
-    newProjectName.value = "";
-    loadProjects();
-  } catch (error) {
-    console.error("Error creando proyecto:", error);
-    showNotification(error.message || "Error al crear el proyecto", "error");
-  }
-}
-
-
-async function createProject() {
-  const name = newProjectName.value.trim();
-  if (!name) return showNotification("Por favor ingresa un nombre para el proyecto", "warning");
   try {
     const res = await fetch(`${API_BASE}/create_project`, {
       method: "POST",
@@ -366,6 +338,29 @@ async function deleteProject() {
     showNotification("Error al eliminar el proyecto", "error");
   }
 }
+// Verifica la sesión al cargar
+async function checkSession() {
+    try {
+        const res = await fetch(`${API_BASE}/me`, {
+            credentials: "include"
+        });
+        
+        if (!res.ok) {
+            window.location.href = "/index.html";
+            return;
+        }
+        
+        const user = await res.json();
+        if (!user.email) {
+            window.location.href = "/index.html";
+        }
+    } catch (err) {
+        window.location.href = "/index.html";
+    }
+}
+
+// Llama esta función al cargar la página
+checkSession();
 
 async function exportProject() {
   if (!currentProject) return;

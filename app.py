@@ -32,7 +32,13 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_CLIENT_KEY", str(uuid.uuid4()))
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-CORS(app, supports_credentials=True, origins=["https://analisis-web.vercel.app"])
+CORS(app, 
+    supports_credentials=True,
+    origins=["https://analisis-web.vercel.app"],
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"]
+)
+
 
 # Google OAuth
 google_bp = make_google_blueprint(
@@ -65,22 +71,33 @@ def me():
 def google_login():
     if not google.authorized:
         return redirect(url_for("google.login"))
+    
     try:
         resp = google.get("/oauth2/v2/userinfo")
+        if not resp.ok:
+            return jsonify({"error": "Failed to fetch user info"}), 400
+            
+        user_info = resp.json()
+        email = user_info.get("email")
+        
+        if not email:
+            return jsonify({"error": "Email not provided by Google"}), 400
+
+        # Configura la sesión correctamente
+        session['user_email'] = email
+        session['name'] = user_info.get("name")
+        session['picture'] = user_info.get("picture")
+        session.permanent = True  # Hace la sesión persistente
+        
+        # Crea directorio de usuario si no existe
+        user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+        os.makedirs(user_folder, exist_ok=True)
+        
+        return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
+        
     except Exception as e:
-        return f"Error de token: {str(e)}", 500
-    if not resp.ok:
-        return "Error al obtener información del usuario", 400
-    user_info = resp.json()
-    email = user_info.get("email")
-    name = user_info.get("name")
-    picture = user_info.get("picture")
-    session['user_email'] = email
-    session['name'] = name
-    session['picture'] = picture
-    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
-    os.makedirs(user_folder, exist_ok=True)
-    return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/login')
 def login():
