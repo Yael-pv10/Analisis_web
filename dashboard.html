@@ -192,446 +192,66 @@
   </div>
 
   <script>
-    let currentProject = null;
-    let mediaRecorder = null;
-    let audioChunks = [];
-    let recordingInterval = null;
-    let recordingSeconds = 0;
-    let recognition = null;
+ const API_BASE = "https://audio-preprocessing-api-production.up.railway.app";
 
-    // DOM Elements
-    const projectList = document.getElementById("projectList");
-    const newProjectName = document.getElementById("newProjectName");
-    const currentProjectLabel = document.getElementById("currentProject");
-    const projectSection = document.getElementById("projectSection");
-    const emptyState = document.getElementById("emptyState");
-    const transcriptionList = document.getElementById("transcriptionList");
-    const fileName = document.getElementById("fileName");
-    const recordingStatus = document.getElementById("recordingStatus");
-    const recordingTime = document.getElementById("recordingTime");
-    const realtimeTranscription = document.getElementById("realtimeTranscription");
+let currentProject = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let recordingInterval = null;
+let recordingSeconds = 0;
+let recognition = null;
 
-    // Buttons
-    const recordBtn = document.getElementById("recordBtn");
-    const stopBtn = document.getElementById("stopBtn");
-    const pauseBtn = document.getElementById("pauseBtn");
-    const uploadBtn = document.getElementById("uploadBtn");
-    const audioInput = document.getElementById("audioInput");
-    const createProjectBtn = document.getElementById("createProjectBtn");
-    const logoutBtn = document.getElementById("logoutBtn");
-    const refreshProjectsBtn = document.getElementById("refreshProjectsBtn");
-    const deleteProjectBtn = document.getElementById("deleteProjectBtn");
-    const exportProjectBtn = document.getElementById("exportProjectBtn");
-    const startTranscriptionBtn = document.getElementById("startTranscriptionBtn");
-    const stopTranscriptionBtn = document.getElementById("stopTranscriptionBtn");
-    const languageSelect = document.getElementById("languageSelect");
+// DOM Elements
+const projectList = document.getElementById("projectList");
+const newProjectName = document.getElementById("newProjectName");
+const currentProjectLabel = document.getElementById("currentProject");
+const projectSection = document.getElementById("projectSection");
+const emptyState = document.getElementById("emptyState");
+const transcriptionList = document.getElementById("transcriptionList");
+const fileName = document.getElementById("fileName");
+const recordingStatus = document.getElementById("recordingStatus");
+const recordingTime = document.getElementById("recordingTime");
+const realtimeTranscription = document.getElementById("realtimeTranscription");
 
-    // Event Listeners
-    audioInput.addEventListener('change', (e) => {
-      if (e.target.files.length > 0) {
-        fileName.textContent = e.target.files[0].name;
-      } else {
-        fileName.textContent = "Ningún archivo seleccionado";
-      }
-    });
+// Buttons
+const recordBtn = document.getElementById("recordBtn");
+const stopBtn = document.getElementById("stopBtn");
+const pauseBtn = document.getElementById("pauseBtn");
+const uploadBtn = document.getElementById("uploadBtn");
+const audioInput = document.getElementById("audioInput");
+const createProjectBtn = document.getElementById("createProjectBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const refreshProjectsBtn = document.getElementById("refreshProjectsBtn");
+const deleteProjectBtn = document.getElementById("deleteProjectBtn");
+const exportProjectBtn = document.getElementById("exportProjectBtn");
+const startTranscriptionBtn = document.getElementById("startTranscriptionBtn");
+const stopTranscriptionBtn = document.getElementById("stopTranscriptionBtn");
+const languageSelect = document.getElementById("languageSelect");
 
-    createProjectBtn.addEventListener('click', createProject);
-    logoutBtn.addEventListener('click', logout);
-    refreshProjectsBtn.addEventListener('click', loadProjects);
-    deleteProjectBtn.addEventListener('click', deleteProject);
-    exportProjectBtn.addEventListener('click', exportProject);
-    recordBtn.addEventListener('click', startRecording);
-    stopBtn.addEventListener('click', stopRecording);
-    pauseBtn.addEventListener('click', togglePauseRecording);
-    uploadBtn.addEventListener('click', uploadAudio);
-    startTranscriptionBtn.addEventListener('click', startRealtimeTranscription);
-    stopTranscriptionBtn.addEventListener('click', stopRealtimeTranscription);
+audioInput.addEventListener("change", (e) => {
+  fileName.textContent = e.target.files.length > 0 ? e.target.files[0].name : "Ningún archivo seleccionado";
+});
 
-    // Initialize
-    loadProjects();
+createProjectBtn.addEventListener("click", createProject);
+logoutBtn.addEventListener("click", logout);
+refreshProjectsBtn.addEventListener("click", loadProjects);
+deleteProjectBtn.addEventListener("click", deleteProject);
+exportProjectBtn.addEventListener("click", exportProject);
+recordBtn.addEventListener("click", startRecording);
+stopBtn.addEventListener("click", stopRecording);
+pauseBtn.addEventListener("click", togglePauseRecording);
+uploadBtn.addEventListener("click", uploadAudio);
+startTranscriptionBtn.addEventListener("click", startRealtimeTranscription);
+stopTranscriptionBtn.addEventListener("click", stopRealtimeTranscription);
 
-    // Functions
-    async function loadProjects() {
-      // Simulate API call
-      try {
-        // In a real app, you would fetch from your API
-        // const res = await fetch("/proyectos");
-        // const data = await res.json();
-        
-        // Mock data for demonstration
-        const mockProjects = ["Proyecto 1", "Proyecto 2", "Análisis de Clientes", "Entrevistas"];
-        
-        projectList.innerHTML = "";
-        mockProjects.forEach(name => {
-          const li = document.createElement("li");
-          li.className = "flex items-center p-2 hover:bg-gray-700 rounded-lg cursor-pointer transition";
-          li.innerHTML = `
-            <i class="fas fa-folder text-yellow-400 mr-2 folder-icon"></i>
-            <span>${name}</span>
-          `;
-          li.onclick = () => loadProject(name);
-          projectList.appendChild(li);
-        });
-      } catch (error) {
-        console.error("Error loading projects:", error);
-        showNotification("Error al cargar proyectos", "error");
-      }
-    }
+loadProjects();
 
-    async function loadProject(name) {
-      currentProject = name;
-      currentProjectLabel.textContent = name;
-      projectSection.classList.remove("hidden");
-      emptyState.classList.add("hidden");
-
-      // Simulate loading transcripts
-      try {
-        // In a real app, you would fetch from your API
-        // const res = await fetch(`/proyecto/${name}/transcripciones`);
-        // const data = await res.json();
-        
-        // Mock data for demonstration
-        const mockTranscripts = [
-          { id: 1, nombre: "entrevista_1.mp3", duracion: "2:45", fecha: "2023-05-15", transcripcion: "Esta es la transcripción del primer audio..." },
-          { id: 2, nombre: "reunion_equipo.mp3", duracion: "15:22", fecha: "2023-05-18", transcripcion: "Transcripción de la reunión del equipo..." },
-          { id: 3, nombre: "feedback_cliente.wav", duracion: "5:10", fecha: "2023-05-20", transcripcion: "El cliente proporcionó feedback sobre el producto..." }
-        ];
-
-        transcriptionList.innerHTML = "";
-        mockTranscripts.forEach(item => {
-          const row = document.createElement("tr");
-          row.className = "hover:bg-gray-600";
-          row.innerHTML = `
-            <td class="px-4 py-3 whitespace-nowrap">
-              <div class="flex items-center">
-                <i class="fas fa-file-audio text-blue-400 mr-2"></i>
-                <span>${item.nombre}</span>
-              </div>
-            </td>
-            <td class="px-4 py-3 whitespace-nowrap">${item.duracion}</td>
-            <td class="px-4 py-3 whitespace-nowrap">${item.fecha}</td>
-            <td class="px-4 py-3 whitespace-nowrap">
-              <div class="flex space-x-2">
-                <button class="text-blue-400 hover:text-blue-300" onclick="playTranscript(${item.id})">
-                  <i class="fas fa-play"></i>
-                </button>
-                <button class="text-green-400 hover:text-green-300" onclick="viewTranscript(${item.id})">
-                  <i class="fas fa-eye"></i>
-                </button>
-                <button class="text-red-400 hover:text-red-300" onclick="deleteTranscript(${item.id})">
-                  <i class="fas fa-trash"></i>
-                </button>
-              </div>
-            </td>
-          `;
-          transcriptionList.appendChild(row);
-        });
-      } catch (error) {
-        console.error("Error loading project:", error);
-        showNotification("Error al cargar el proyecto", "error");
-      }
-    }
-
-    async function createProject() {
-      const name = newProjectName.value.trim();
-      if (!name) {
-        showNotification("Por favor ingresa un nombre para el proyecto", "warning");
-        return;
-      }
-
-      try {
-        // In a real app, you would post to your API
-        // await fetch(`/crear_proyecto`, {
-        //   method: "POST",
-        //   headers: { "Content-Type": "application/json" },
-        //   body: JSON.stringify({ nombre: name })
-        // });
-        
-        // Simulate success
-        showNotification(`Proyecto "${name}" creado con éxito`, "success");
-        newProjectName.value = "";
-        loadProjects();
-      } catch (error) {
-        console.error("Error creating project:", error);
-        showNotification("Error al crear el proyecto", "error");
-      }
-    }
-
-    async function deleteProject() {
-      if (!currentProject) return;
-      
-      if (!confirm(`¿Estás seguro de que quieres eliminar el proyecto "${currentProject}"?`)) {
-        return;
-      }
-
-      try {
-        // In a real app, you would delete via your API
-        // await fetch(`/proyecto/${currentProject}`, { method: "DELETE" });
-        
-        // Simulate success
-        showNotification(`Proyecto "${currentProject}" eliminado`, "success");
-        currentProject = null;
-        projectSection.classList.add("hidden");
-        emptyState.classList.remove("hidden");
-        loadProjects();
-      } catch (error) {
-        console.error("Error deleting project:", error);
-        showNotification("Error al eliminar el proyecto", "error");
-      }
-    }
-
-    async function exportProject() {
-      if (!currentProject) return;
-      
-      try {
-        // In a real app, you would fetch the export from your API
-        // const res = await fetch(`/proyecto/${currentProject}/exportar`);
-        // const blob = await res.blob();
-        // const url = window.URL.createObjectURL(blob);
-        // const a = document.createElement('a');
-        // a.href = url;
-        // a.download = `${currentProject}_export.zip`;
-        // document.body.appendChild(a);
-        // a.click();
-        // window.URL.revokeObjectURL(url);
-        // a.remove();
-        
-        // Simulate success
-        showNotification(`Exportando proyecto "${currentProject}"...`, "info");
-      } catch (error) {
-        console.error("Error exporting project:", error);
-        showNotification("Error al exportar el proyecto", "error");
-      }
-    }
-
-    async function uploadAudio() {
-      const file = audioInput.files[0];
-      if (!file || !currentProject) {
-        showNotification("Por favor selecciona un archivo de audio", "warning");
-        return;
-      }
-
-      try {
-        // In a real app, you would upload to your API
-        // const formData = new FormData();
-        // formData.append("audio", file);
-        // formData.append("nombre_proyecto", currentProject);
-        // await fetch("/upload", { method: "POST", body: formData });
-        // await fetch("/procesar", {
-        //   method: "POST",
-        //   headers: { "Content-Type": "application/json" },
-        //   body: JSON.stringify({ nombre_proyecto: currentProject })
-        // });
-        
-        // Simulate success
-        showNotification("Audio subido y procesado con éxito", "success");
-        audioInput.value = "";
-        fileName.textContent = "Ningún archivo seleccionado";
-        loadProject(currentProject);
-      } catch (error) {
-        console.error("Error uploading audio:", error);
-        showNotification("Error al subir el audio", "error");
-      }
-    }
-
-    async function startRecording() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
-        audioChunks = [];
-        
-        mediaRecorder.ondataavailable = (e) => {
-          audioChunks.push(e.data);
-        };
-        
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-          // Here you would typically upload the recorded audio
-          // For demo purposes, we'll just simulate it
-          showNotification("Grabación completada", "success");
-          
-          // Update waveform progress (demo)
-          updateWaveform(100);
-          
-          // Reset recording UI
-          recordBtn.disabled = false;
-          stopBtn.disabled = true;
-          pauseBtn.disabled = true;
-          recordingStatus.classList.add("hidden");
-          clearInterval(recordingInterval);
-          recordingSeconds = 0;
-        };
-        
-        mediaRecorder.start();
-        recordBtn.disabled = true;
-        stopBtn.disabled = false;
-        pauseBtn.disabled = false;
-        recordingStatus.classList.remove("hidden");
-        
-        // Start recording timer
-        recordingInterval = setInterval(() => {
-          recordingSeconds++;
-          const minutes = Math.floor(recordingSeconds / 60).toString().padStart(2, '0');
-          const seconds = (recordingSeconds % 60).toString().padStart(2, '0');
-          recordingTime.textContent = `${minutes}:${seconds}`;
-          
-          // Update waveform progress (demo)
-          updateWaveform((recordingSeconds % 100) + 1);
-        }, 1000);
-        
-        showNotification("Grabación iniciada", "info");
-      } catch (error) {
-        console.error("Error starting recording:", error);
-        showNotification("Error al iniciar la grabación", "error");
-      }
-    }
-
-    function stopRecording() {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        // Stop all tracks in the stream
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-      }
-    }
-
-    function togglePauseRecording() {
-      if (!mediaRecorder) return;
-      
-      if (mediaRecorder.state === 'recording') {
-        mediaRecorder.pause();
-        pauseBtn.innerHTML = '<i class="fas fa-play mr-2"></i>Continuar';
-        showNotification("Grabación pausada", "warning");
-        clearInterval(recordingInterval);
-      } else if (mediaRecorder.state === 'paused') {
-        mediaRecorder.resume();
-        pauseBtn.innerHTML = '<i class="fas fa-pause mr-2"></i>Pausar';
-        showNotification("Grabación reanudada", "info");
-        
-        // Restart recording timer
-        recordingInterval = setInterval(() => {
-          recordingSeconds++;
-          const minutes = Math.floor(recordingSeconds / 60).toString().padStart(2, '0');
-          const seconds = (recordingSeconds % 60).toString().padStart(2, '0');
-          recordingTime.textContent = `${minutes}:${seconds}`;
-          
-          // Update waveform progress (demo)
-          updateWaveform((recordingSeconds % 100) + 1);
-        }, 1000);
-      }
-    }
-
-    function updateWaveform(progress) {
-      document.getElementById('waveform').style.setProperty('--progress', `${progress}%`);
-    }
-
-    function startRealtimeTranscription() {
-      // In a real app, you would use the Web Speech API or a service like Google Speech-to-Text
-      // This is a simulation of real-time transcription
-      
-      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        showNotification("La transcripción en tiempo real no es compatible con tu navegador", "error");
-        return;
-      }
-      
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = languageSelect.value;
-      
-      recognition.onresult = (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript + ' ';
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-        
-        realtimeTranscription.innerHTML = `
-          <p class="text-white">${finalTranscript}</p>
-          <p class="text-gray-400">${interimTranscript}</p>
-        `;
-      };
-      
-      recognition.onerror = (event) => {
-        console.error("Recognition error:", event.error);
-        stopRealtimeTranscription();
-        showNotification(`Error en la transcripción: ${event.error}`, "error");
-      };
-      
-      recognition.start();
-      startTranscriptionBtn.disabled = true;
-      stopTranscriptionBtn.disabled = false;
-      showNotification("Transcripción en tiempo real iniciada", "info");
-    }
-
-    function stopRealtimeTranscription() {
-      if (recognition) {
-        recognition.stop();
-        recognition = null;
-      }
-      startTranscriptionBtn.disabled = false;
-      stopTranscriptionBtn.disabled = true;
-      showNotification("Transcripción en tiempo real detenida", "info");
-    }
-
-    function logout() {
-      // In a real app, you would call your logout API
-      // fetch("/logout").then(() => location.reload());
-      showNotification("Sesión cerrada con éxito", "success");
-      setTimeout(() => {
-        // Redirect to login page in a real app
-        console.log("User logged out");
-      }, 1000);
-    }
-
-    function showNotification(message, type) {
-      // This is a simplified notification system
-      // In a real app, you might use a library like Toastify or SweetAlert
-      const types = {
-        success: { icon: 'fa-check', color: 'bg-green-600' },
-        error: { icon: 'fa-times', color: 'bg-red-600' },
-        warning: { icon: 'fa-exclamation', color: 'bg-yellow-600' },
-        info: { icon: 'fa-info', color: 'bg-blue-600' }
-      };
-      
-      const notification = document.createElement('div');
-      notification.className = `fixed top-4 right-4 ${types[type].color} text-white px-4 py-2 rounded-lg shadow-lg flex items-center animate-fade-in`;
-      notification.innerHTML = `
-        <i class="fas ${types[type].icon} mr-2"></i>
-        <span>${message}</span>
-      `;
-      
-      document.body.appendChild(notification);
-      
-      setTimeout(() => {
-        notification.classList.add('animate-fade-out');
-        setTimeout(() => notification.remove(), 500);
-      }, 3000);
-    }
-
-    // These would be implemented in a real app
-    function playTranscript(id) {
-      showNotification(`Reproduciendo transcripción ${id}...`, "info");
-    }
-
-    function viewTranscript(id) {
-      showNotification(`Mostrando detalles de transcripción ${id}...`, "info");
-    }
-
-    function deleteTranscript(id) {
-      if (confirm("¿Estás seguro de que quieres eliminar esta transcripción?")) {
-        showNotification(`Transcripción ${id} eliminada`, "success");
-      }
-    }
-    async function getProjects() {
+// ========================
+// API functions
+// ========================
+async function getProjects() {
   try {
-    const res = await fetch("/proyectos");
+    const res = await fetch(`${API_BASE}/proyectos`, { credentials: "include" });
     if (!res.ok) throw new Error("No se pudo cargar los proyectos");
     const data = await res.json();
     return data.proyectos || [];
@@ -642,45 +262,270 @@
   }
 }
 
-  async function getTranscriptions(projectName) {
-    try {
-      const res = await fetch(`/proyecto/${projectName}/transcripciones`);
-      if (!res.ok) throw new Error("No se pudo cargar las transcripciones");
-      const data = await res.json();
-      return data.transcripciones || [];
-    } catch (err) {
-      console.error("Error al cargar transcripciones:", err);
-      showNotification("Error al cargar las transcripciones", "error");
-      return [];
-    }
+async function getTranscriptions(projectName) {
+  try {
+    const res = await fetch(`${API_BASE}/proyecto/${projectName}/transcripciones`, { credentials: "include" });
+    if (!res.ok) throw new Error("No se pudo cargar las transcripciones");
+    const data = await res.json();
+    return data.transcripciones || [];
+  } catch (err) {
+    console.error("Error al cargar transcripciones:", err);
+    showNotification("Error al cargar las transcripciones", "error");
+    return [];
   }
+}
 
-  async function loadProjects() {
-    const projects = await getProjects();
-    const projectSelect = document.getElementById("project-select");
-    projectSelect.innerHTML = `
-      <option value="" disabled selected>Selecciona un proyecto</option>
-      ${projects.map(p => `<option value="${p}">${p}</option>`).join("")}
-    `;
-  }
+// ========================
+// Project-related functions
+// ========================
+async function loadProjects() {
+  const projects = await getProjects();
 
-  // async function loadUser() {
-  //   try {
-  //     const res = await fetch("/me");
-  //     if (!res.ok) throw new Error("No autenticado");
-  //     const data = await res.json();
-  //     document.getElementById("user-name").textContent = data.nombre || "Usuario";
-  //     await loadProjects();
-  //   } catch (err) {
-  //     console.error("Error al cargar el usuario:", err);
-  //     showNotification("Redirigiendo a login...", "warning");
-  //     setTimeout(() => window.location.href = "/login.html", 1500);
-  //   }
-  // }
-
-  document.addEventListener("DOMContentLoaded", () => {
-    loadUser();
+  projectList.innerHTML = "";
+  projects.forEach((name) => {
+    const li = document.createElement("li");
+    li.className = "flex items-center p-2 hover:bg-gray-700 rounded-lg cursor-pointer transition";
+    li.innerHTML = `<i class="fas fa-folder text-yellow-400 mr-2 folder-icon"></i><span>${name}</span>`;
+    li.onclick = () => loadProject(name);
+    projectList.appendChild(li);
   });
+}
+
+async function loadProject(name) {
+  currentProject = name;
+  currentProjectLabel.textContent = name;
+  projectSection.classList.remove("hidden");
+  emptyState.classList.add("hidden");
+
+  const transcriptions = await getTranscriptions(name);
+  transcriptionList.innerHTML = "";
+  transcriptions.forEach((item) => {
+    const row = document.createElement("tr");
+    row.className = "hover:bg-gray-600";
+    row.innerHTML = `
+      <td class="px-4 py-3 whitespace-nowrap">
+        <div class="flex items-center">
+          <i class="fas fa-file-audio text-blue-400 mr-2"></i>
+          <span>${item.nombre}</span>
+        </div>
+      </td>
+      <td class="px-4 py-3 whitespace-nowrap">${item.duracion}</td>
+      <td class="px-4 py-3 whitespace-nowrap">${item.fecha}</td>
+      <td class="px-4 py-3 whitespace-nowrap">
+        <div class="flex space-x-2">
+          <button class="text-blue-400 hover:text-blue-300" onclick="playTranscript(${item.id})"><i class="fas fa-play"></i></button>
+          <button class="text-green-400 hover:text-green-300" onclick="viewTranscript(${item.id})"><i class="fas fa-eye"></i></button>
+          <button class="text-red-400 hover:text-red-300" onclick="deleteTranscript(${item.id})"><i class="fas fa-trash"></i></button>
+        </div>
+      </td>
+    `;
+    transcriptionList.appendChild(row);
+  });
+}
+
+async function createProject() {
+  const name = newProjectName.value.trim();
+  if (!name) return showNotification("Por favor ingresa un nombre para el proyecto", "warning");
+
+  try {
+    const res = await fetch(`${API_BASE}/crear_proyecto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ nombre: name }),
+    });
+
+    if (!res.ok) throw new Error("Error en la creación");
+
+    showNotification(`Proyecto "${name}" creado con éxito`, "success");
+    newProjectName.value = "";
+    loadProjects();
+  } catch (error) {
+    console.error("Error creando proyecto:", error);
+    showNotification("Error al crear el proyecto", "error");
+  }
+}
+
+async function deleteProject() {
+  if (!currentProject) return;
+
+  if (!confirm(`¿Estás seguro de que quieres eliminar el proyecto "${currentProject}"?`)) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/proyecto/${currentProject}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+
+    if (!res.ok) throw new Error("Error en la eliminación");
+
+    showNotification(`Proyecto "${currentProject}" eliminado`, "success");
+    currentProject = null;
+    projectSection.classList.add("hidden");
+    emptyState.classList.remove("hidden");
+    loadProjects();
+  } catch (error) {
+    console.error("Error deleting project:", error);
+    showNotification("Error al eliminar el proyecto", "error");
+  }
+}
+
+async function exportProject() {
+  if (!currentProject) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/proyecto/${currentProject}/exportar`, {
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Error exportando proyecto");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${currentProject}_export.zip`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+    showNotification("Exportación iniciada", "info");
+  } catch (error) {
+    console.error("Error exportando proyecto:", error);
+    showNotification("Error al exportar el proyecto", "error");
+  }
+}
+
+async function uploadAudio() {
+  const file = audioInput.files[0];
+  if (!file || !currentProject) {
+    showNotification("Por favor selecciona un archivo de audio", "warning");
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append("audio", file);
+    formData.append("nombre_proyecto", currentProject);
+
+    await fetch(`${API_BASE}/upload`, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    });
+
+    await fetch(`${API_BASE}/procesar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ nombre_proyecto: currentProject }),
+    });
+
+    showNotification("Audio subido y procesado con éxito", "success");
+    audioInput.value = "";
+    fileName.textContent = "Ningún archivo seleccionado";
+    loadProject(currentProject);
+  } catch (error) {
+    console.error("Error uploading audio:", error);
+    showNotification("Error al subir el audio", "error");
+  }
+}
+
+// ========================
+// Real-time Transcription
+// ========================
+function startRealtimeTranscription() {
+  if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+    showNotification("Tu navegador no soporta transcripción en tiempo real", "error");
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = languageSelect.value;
+
+  recognition.onresult = (event) => {
+    let interimTranscript = "";
+    let finalTranscript = "";
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript + " ";
+      } else {
+        interimTranscript += transcript;
+      }
+    }
+
+    realtimeTranscription.innerHTML = `
+      <p class="text-white">${finalTranscript}</p>
+      <p class="text-gray-400">${interimTranscript}</p>
+    `;
+  };
+
+  recognition.onerror = (event) => {
+    console.error("Recognition error:", event.error);
+    stopRealtimeTranscription();
+    showNotification(`Error: ${event.error}`, "error");
+  };
+
+  recognition.start();
+  startTranscriptionBtn.disabled = true;
+  stopTranscriptionBtn.disabled = false;
+  showNotification("Transcripción en tiempo real iniciada", "info");
+}
+
+function stopRealtimeTranscription() {
+  if (recognition) recognition.stop();
+  recognition = null;
+  startTranscriptionBtn.disabled = false;
+  stopTranscriptionBtn.disabled = true;
+  showNotification("Transcripción detenida", "info");
+}
+
+// ========================
+// UI Utilities
+// ========================
+function logout() {
+  fetch(`${API_BASE}/logout`, { credentials: "include" }).then(() => {
+    showNotification("Sesión cerrada", "success");
+    setTimeout(() => {
+      location.href = "/login.html";
+    }, 1000);
+  });
+}
+
+function showNotification(message, type) {
+  const types = {
+    success: { icon: "fa-check", color: "bg-green-600" },
+    error: { icon: "fa-times", color: "bg-red-600" },
+    warning: { icon: "fa-exclamation", color: "bg-yellow-600" },
+    info: { icon: "fa-info", color: "bg-blue-600" },
+  };
+
+  const notification = document.createElement("div");
+  notification.className = `fixed top-4 right-4 ${types[type].color} text-white px-4 py-2 rounded-lg shadow-lg flex items-center animate-fade-in`;
+  notification.innerHTML = `<i class="fas ${types[type].icon} mr-2"></i><span>${message}</span>`;
+  document.body.appendChild(notification);
+
+  setTimeout(() => {
+    notification.classList.add("animate-fade-out");
+    setTimeout(() => notification.remove(), 500);
+  }, 3000);
+}
+
+// Placeholders
+function playTranscript(id) {
+  showNotification(`Reproduciendo transcripción ${id}`, "info");
+}
+function viewTranscript(id) {
+  showNotification(`Mostrando transcripción ${id}`, "info");
+}
+function deleteTranscript(id) {
+  if (confirm("¿Eliminar transcripción?")) {
+    showNotification(`Transcripción ${id} eliminada`, "success");
+  }
+}
 
   </script>
 </body>
