@@ -51,7 +51,6 @@ os.makedirs(BASE_DIR, exist_ok=True)
 def index():
     return "API funcionando con login de Google"
 
-# Ruta para obtener usuario logueado (útil en frontend)
 @app.route("/me")
 def me():
     if "user_email" not in session:
@@ -62,66 +61,48 @@ def me():
         "picture": session.get("picture")
     })
 
-# Ruta callback de login con Google
 @app.route("/login/google/authorized")
 def google_login():
     if not google.authorized:
         return redirect(url_for("google.login"))
-
     try:
         resp = google.get("/oauth2/v2/userinfo")
     except Exception as e:
         return f"Error de token: {str(e)}", 500
-
     if not resp.ok:
         return "Error al obtener información del usuario", 400
-
     user_info = resp.json()
     email = user_info.get("email")
     name = user_info.get("name")
     picture = user_info.get("picture")
-
-    # Guardar en sesión
     session['user_email'] = email
     session['name'] = name
     session['picture'] = picture
-
-    # Crear carpeta de usuario
     user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
     os.makedirs(user_folder, exist_ok=True)
-
-    # Redirigir al dashboard
     return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
 
 @app.route('/login')
 def login():
     if not google.authorized:
         return redirect(url_for("google.login"))
-
     try:
         resp = google.get("/oauth2/v2/userinfo")
         if not resp.ok:
-            # Token caducado o error de conexión
             return redirect(url_for("google.login"))
     except TokenExpiredError:
-        # El token ya no es válido
         return redirect(url_for("google.login"))
     except Exception as e:
-        # Otro error inesperado
         return f"Error inesperado: {str(e)}", 500
-
     user_info = resp.json()
     email = user_info['email']
     session['user_email'] = email
     session['name'] = user_info.get('name')
     session['picture'] = user_info.get('picture')
-
-    # Crear carpeta del usuario
     user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
     os.makedirs(user_folder, exist_ok=True)
-
-    # Redirigir al dashboard del frontend
     return redirect(f"https://analisis-web.vercel.app/dashboard.html?email={email}")
+
 @app.route('/logout')
 def logout():
     session.clear()
@@ -131,22 +112,18 @@ def logout():
 def upload_audio():
     if 'file' not in request.files or 'project' not in request.form:
         return jsonify({'error': 'Missing file or project name'}), 400
-
     email = session.get('user_email')
     if not email:
         return jsonify({'error': 'Unauthorized'}), 401
-
     file = request.files['file']
     project = request.form['project']
     original_ext = file.filename.split('.')[-1].lower()
     unique_name = f"{uuid.uuid4()}.{original_ext}"
-
     user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
     project_folder = os.path.join(user_folder, project)
     os.makedirs(project_folder, exist_ok=True)
     audio_path = os.path.join(project_folder, unique_name)
     file.save(audio_path)
-
     if original_ext in ['webm', 'mp3']:
         audio_wav_path = audio_path.rsplit('.', 1)[0] + '.wav'
         try:
@@ -155,10 +132,44 @@ def upload_audio():
             audio_path = audio_wav_path
         except Exception as e:
             return jsonify({'error': f'Error al convertir audio: {e}'}), 500
-
     transcription = transcribe_audio(audio_path)
     save_transcription_to_csv(project_folder, file.filename, transcription)
     return jsonify({'transcription': transcription}), 200
+
+# Obtener lista de proyectos del usuario
+@app.route('/proyectos', methods=['GET'])
+def get_proyectos():
+    email = session.get('user_email')
+    if not email:
+        return jsonify({'error': 'Usuario no autenticado'}), 401
+
+    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+    if not os.path.isdir(user_folder):
+        return jsonify({'projects': []})
+
+    projects = [
+        name for name in os.listdir(user_folder)
+        if os.path.isdir(os.path.join(user_folder, name))
+    ]
+    return jsonify({'projects': projects})
+
+# Obtener transcripciones de un proyecto específico
+@app.route('/proyecto/<nombre>/transcripciones', methods=['GET'])
+def get_transcripciones(nombre):
+    email = session.get('user_email')
+    if not email:
+        return jsonify({'error': 'Usuario no autenticado'}), 401
+
+    user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
+    project_folder = os.path.join(user_folder, nombre)
+    csv_path = os.path.join(project_folder, 'transcriptions.csv')
+
+    if not os.path.isfile(csv_path):
+        return jsonify({'error': 'No se encontró el archivo de transcripciones'}), 404
+
+    df = pd.read_csv(csv_path)
+    return jsonify(df.to_dict(orient='records'))
+
 
 def transcribe_audio(audio_path):
     recognizer = sr.Recognizer()
@@ -183,14 +194,11 @@ def preprocesamiento():
     project = request.args.get('project')
     if not email or not project:
         return jsonify({'error': 'Missing user session or project'}), 400
-
     user_folder = os.path.join(BASE_DIR, email.replace('@', '_at_'))
     project_folder = os.path.join(user_folder, project)
     csv_path = os.path.join(project_folder, 'transcriptions.csv')
-
     if not os.path.isfile(csv_path):
         return jsonify({'error': 'No transcriptions found'}), 404
-
     df = pd.read_csv(csv_path)
     df['lowercase'] = df['transcription'].str.lower()
     df['tokens'] = df['lowercase'].apply(word_tokenize)
@@ -198,11 +206,9 @@ def preprocesamiento():
     df['no_stopwords'] = df['tokens'].apply(lambda tokens: [w for w in tokens if w not in stop_words and w not in string.punctuation])
     df['lemmas'] = df['no_stopwords'].apply(lambda tokens: [spacy_es(word)[0].lemma_ for word in tokens])
     df['final'] = df['lemmas'].apply(lambda tokens: ' '.join(tokens))
-
     vectorizer = TfidfVectorizer()
     tfidf_matrix = vectorizer.fit_transform(df['final'])
     tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=vectorizer.get_feature_names_out())
-
     result = {
         'original': df[['filename', 'transcription']].to_dict(orient='records'),
         'lowercase': df['lowercase'].tolist(),
@@ -213,7 +219,6 @@ def preprocesamiento():
     }
     return jsonify(result)
 
-# Iniciar app
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
