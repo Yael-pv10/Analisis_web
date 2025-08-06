@@ -488,7 +488,7 @@ function stopRealtimeTranscription() {
 // ========================
 async function logout() {
   try {
-    await fetch(`${BASE_URL}/logout`, {
+    await fetch(`${API_BASE}/logout`, {
       method: "GET",
       credentials: "include"
     });
