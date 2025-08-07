@@ -19,6 +19,7 @@ from oauthlib.oauth2.rfc6749.errors import TokenExpiredError
 
 # Descargar recursos
 nltk.download('punkt')
+nltk.download('punkt_tab')
 nltk.download('stopwords')
 spacy_es = spacy.load('es_core_news_sm')
 
@@ -49,7 +50,7 @@ google_bp = make_google_blueprint(
     redirect_to='google_login',
     scope=["profile", "email"]
 )
-app.register_blueprint(google_bp, url_prefix="/google_login")
+app.register_blueprint(google_bp, url_prefix="/login/google/authorized")
 
 # Rutas base
 BASE_DIR = 'usuarios'
