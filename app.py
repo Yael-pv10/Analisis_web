@@ -5,6 +5,8 @@ import os
 from flask_cors import CORS
 from pydub import AudioSegment
 import uuid
+from transformers import pipeline
+from ftfy import fix_text
 
 # Preprocesamiento
 import nltk
@@ -30,10 +32,9 @@ TRANSCRIPTIONS_CSV = 'transcriptions.csv'
 PROCESSED_CSV = 'processed_transcriptions.csv'
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-# Cargar modelo preentrenado multilingüe BERT
+# Modelo de análisis de sentimientos
 classifier = pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
 
-# Diccionarios para traducir sentimiento
 traduccion_sentimientos = {
     "1 star": "Muy negativo",
     "2 stars": "Negativo",
@@ -41,7 +42,6 @@ traduccion_sentimientos = {
     "4 stars": "Positivo",
     "5 stars": "Muy positivo"
 }
-
 rank_map = {
     "1 star": 1,
     "2 stars": 2,
@@ -49,6 +49,7 @@ rank_map = {
     "4 stars": 4,
     "5 stars": 5
 }
+
 def predecir_sentimiento(texto):
     if pd.isna(texto) or texto.strip() == "":
         return {"label": "No disponible", "rank": None}
@@ -62,18 +63,26 @@ def predecir_sentimiento(texto):
         print(f"Error con texto: {texto[:30]}... -> {e}")
         return {"label": "Error", "rank": None}
 
-@app.route('/analyze_sentiments', methods=['GET'])
-def analyze_sentiments():
+@app.route('/ver_resultados_sentimientos', methods=['GET'])
+def ver_resultados_sentimientos():
     if not os.path.exists(TRANSCRIPTIONS_CSV):
         return jsonify({'error': 'No hay archivo de transcripciones'}), 404
+
     df = pd.read_csv(TRANSCRIPTIONS_CSV)
-    # Aplicar modelo a todas las transcripciones
+
+    # Arreglar texto
+    df["transcription"] = df["transcription"].apply(lambda x: fix_text(str(x)) if pd.notna(x) else x)
+
+    # Aplicar modelo
     resultados = df["transcription"].apply(predecir_sentimiento)
     df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
     df["rank"] = resultados.apply(lambda x: x["rank"])
-    # Guardar como CSV para análisis posterior
+
+    # Guardar CSV para descarga si se desea
     df.to_csv(RESULTS_CSV, index=False, encoding='utf-8-sig')
-    return jsonify({'message': 'Análisis de sentimientos completado', 'results_file': RESULTS_CSV}), 200
+
+    # Mostrar resultados en una página HTML
+    return render_template('Analizar_Sentimientos.html', tablas=[df.to_html(classes='table table-striped', index=False, justify='center')], titles=df.columns.values)
 
 @app.route('/upload', methods=['POST'])
 def upload_audio():

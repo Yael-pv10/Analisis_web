@@ -3,122 +3,530 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualización de Sentimientos</title>
+    <title>Dashboard de Análisis de Sentimientos</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        .sentiment-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .sentiment-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        #fileInput {
+            display: none;
+        }
+        .custom-file-upload {
+            border: 2px dashed #ccc;
+            display: inline-block;
+            padding: 6px 12px;
+            cursor: pointer;
+            border-radius: 0.375rem;
+            transition: all 0.3s;
+        }
+        .custom-file-upload:hover {
+            border-color: #4F46E5;
+            background-color: #f5f7ff;
+        }
+        .loading {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
+        }
+    </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-    <header class="bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg">
-        <div class="container mx-auto px-4 py-6">
-            <div class="flex flex-col md:flex-row justify-between items-center">
-                <div class="flex items-center mb-4 md:mb-0">
-                    <i class="fas fa-chart-pie text-3xl mr-3"></i>
-                    <h1 class="text-2xl md:text-3xl font-bold">Análisis de Sentimientos</h1>
-                </div>
-                <nav class="flex space-x-4">
-                    <a href="/" class="px-3 py-2 rounded-lg hover:bg-white hover:bg-opacity-20 transition">Inicio</a>
-                    <a href="/sentiment_visualization" class="px-3 py-2 rounded-lg bg-white bg-opacity-20 transition">Resultados</a>
-                </nav>
-            </div>
-        </div>
-    </header>
-
-    <div class="container mx-auto px-4 py-8">
-        <h1 class="text-3xl font-bold text-gray-800 mb-4">Visualización de Sentimientos</h1>
-        
-        <div class="bg-white rounded-xl shadow-md p-6 mb-8">
-            <h2 class="text-xl font-semibold mb-4">Distribución de Sentimientos</h2>
-            <div class="flex flex-col lg:flex-row gap-6">
-                <div class="lg:w-1/2">
-                    <img src="data:image/png;base64,{{ graph_url }}" alt="Gráfico de Sentimientos" class="w-full h-auto">
-                </div>
-                <div class="lg:w-1/2 space-y-4">
-                    <div class="p-4 bg-green-50 rounded-lg border-l-4 border-green-500">
-                        <div class="flex justify-between items-center">
-                            <span class="font-medium">Satisfacción Promedio</span>
-                            <span class="text-xl font-bold" id="avgSatisfaction">0.0</span>
+<body class="bg-gray-100">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-indigo-700 text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <div class="flex flex-col md:flex-row justify-between items-center">
+                    <div class="flex items-center mb-4 md:mb-0">
+                        <div class="w-12 h-12 mr-4 bg-white rounded-lg flex items-center justify-center">
+                            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/3b61d4d9-ebaa-47d7-b687-168ed320fb62.png" alt="Icono de análisis de sentimientos con forma de gráfico de barras y un emoticón sonriente en azul" />
+                        </div>
+                        <div>
+                            <h1 class="text-2xl font-bold">Análisis de Sentimientos</h1>
+                            <p class="text-indigo-200">Visualización de resultados en tiempo real</p>
                         </div>
                     </div>
-                    <div class="grid grid-cols-3 gap-4">
-                        <div class="p-3 bg-green-100 rounded-lg text-center">
-                            <p class="text-sm text-green-800">Positivas</p>
-                            <p class="text-xl font-bold" id="positiveCount">0</p>
-                        </div>
-                        <div class="p-3 bg-yellow-100 rounded-lg text-center">
-                            <p class="text-sm text-yellow-800">Neutrales</p>
-                            <p class="text-xl font-bold" id="neutralCount">0</p>
-                        </div>
-                        <div class="p-3 bg-red-100 rounded-lg text-center">
-                            <p class="text-sm text-red-800">Negativas</p>
-                            <p class="text-xl font-bold" id="negativeCount">0</p>
-                        </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="window.location.href='/'">
+                            <span class="px-4 py-2 bg-indigo-600 hover:bg-indigo-800 rounded-lg transition">Volver al Inicio</span>
+                        </button>
+                        <button onclick="exportToCSV()">
+                            <span class="px-4 py-2 bg-white text-indigo-700 hover:bg-gray-100 rounded-lg transition">Exportar CSV</span>
+                        </button>
                     </div>
                 </div>
             </div>
-        </div>
+        </header>
 
-        <div class="bg-white rounded-xl shadow-md p-6">
-            <h2 class="text-xl font-semibold mb-4">Conteo de Sentimientos</h2>
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sentimiento</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {% for sentiment, count in sentiment_counts.items() %}
-                    <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ sentiment }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ count }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+        <!-- Main Content -->
+        <main class="container mx-auto px-4 py-8">
+            <!-- Upload Section -->
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Cargar nuevas opiniones</h2>
+                <div class="flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4">
+                    <label for="fileInput" class="custom-file-upload">
+                        <span id="fileName">Seleccionar archivo CSV</span>
+                        <input id="fileInput" type="file" accept=".csv" />
+                    </label>
+                    <button id="uploadBtn" class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                        Analizar Sentimientos
+                    </button>
+                    <div id="loadingIndicator" class="hidden loading px-4 py-2 bg-blue-100 text-blue-700 rounded-lg">
+                        Procesando...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="sentiment-card bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 bg-green-100 rounded-lg mr-4">
+                            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/1b920b0f-b165-47f1-80af-2a0fcba56465.png" alt="Ícono de carita feliz en verde representando sentimientos positivos" />
+                        </div>
+                        <div>
+                            <p class="text-gray-500">Total Opiniones</p>
+                            <h3 id="totalOpinions" class="text-2xl font-bold">0</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="sentiment-card bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 bg-yellow-100 rounded-lg mr-4">
+                            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/39c2238e-9fd6-4040-82a9-7264038b162a.png" alt="Ícono de carita neutral en amarillo" />
+                        </div>
+                        <div>
+                            <p class="text-gray-500">Neutro</p>
+                            <h3 id="neutralCount" class="text-2xl font-bold">0</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="sentiment-card bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 bg-blue-100 rounded-lg mr-4">
+                            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/5e9d86c1-0ea9-4ccc-ba40-d29330c2b258.png" alt="Ícono de carita positiva en azul" />
+                        </div>
+                        <div>
+                            <p class="text-gray-500">Positivo</p>
+                            <h3 id="positiveCount" class="text-2xl font-bold">0</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="sentiment-card bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 bg-red-100 rounded-lg mr-4">
+                            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/d712da95-b0b5-484d-972e-a80e4f7b4cee.png" alt="Ícono de carita triste en rojo representando sentimientos negativos" />
+                        </div>
+                        <div>
+                            <p class="text-gray-500">Negativo</p>
+                            <h3 id="negativeCount" class="text-2xl font-bold">0</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <!-- Pie Chart -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Distribución de Sentimientos</h2>
+                    <canvas id="sentimentPieChart"></canvas>
+                </div>
+                <!-- Bar Chart -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Intensidad de Sentimientos</h2>
+                    <canvas id="sentimentBarChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Word Cloud Section -->
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Palabras Clave por Sentimiento</h2>
+                <div class="flex flex-wrap gap-2" id="wordCloud">
+                    <!-- Words will be added here by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Recent Opinions Table -->
+            <div class="bg-white rounded-xl shadow-lg p-6 overflow-x-auto">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Opiniones Recientes</h2>
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Texto</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sentimiento</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Puntuación</th>
+                        </tr>
+                    </thead>
+                    <tbody id="opinionsTableBody" class="bg-white divide-y divide-gray-200">
+                        <!-- Table rows will be added here by JavaScript -->
+                    </tbody>
+                </table>
+                <div class="mt-4 flex justify-center">
+                    <button id="loadMore" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700">
+                        Cargar más...
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-gray-800 text-white py-6">
+            <div class="container mx-auto px-4 text-center">
+                <p>Sistema de Análisis de Sentimientos - © 2023</p>
+            </div>
+        </footer>
     </div>
-</div>
-
-    <footer class="bg-gray-800 text-white py-8 mt-12">
-        <div class="container mx-auto px-4">
-            <div class="flex flex-col md:flex-row justify-between items-center">
-                <div class="mb-4 md:mb-0">
-                    <h2 class="text-xl font-bold mb-2">AudioSentiment</h2>
-                    <p class="text-gray-400">Herramienta de análisis de sentimientos en audio</p>
-                </div>
-                <div class="flex space-x-6">
-                    <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-github text-xl"></i></a>
-                    <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-twitter text-xl"></i></a>
-                    <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-linkedin text-xl"></i></a>
-                </div>
-            </div>
-            <div class="border-t border-gray-700 mt-6 pt-6 text-center text-gray-400 text-sm">
-                © 2023 AudioSentiment. Todos los derechos reservados.
-            </div>
-        </div>
-    </footer>
 
     <script>
-        // Script to update the sentiment stats
-        document.addEventListener('DOMContentLoaded', function() {
-            const sentimentStats = JSON.parse('{{ sentiment_counts|tojson|safe }}');
-            // Calculate metrics
-            let positive = 0, neutral = 0, negative = 0;
-            for (const [key, value] of Object.entries(sentimentStats)) {
-                if (key.includes('Positivo')) positive += value;
-                else if (key.includes('Neutral')) neutral += value;
-                else if (key.includes('Negativo')) negative += value;
-            }
-            
-            // Update UI
-            document.getElementById('positiveCount').textContent = positive;
-            document.getElementById('neutralCount').textContent = neutral;
-            document.getElementById('negativeCount').textContent = negative;
-            
-            const total = positive + neutral + negative;
-            const avgScore = total ? ((positive * 1 + neutral * 0.5) / total).toFixed(2) : 0;
-            document.getElementById('avgSatisfaction').textContent = avgScore;
+        // Global variables
+        let currentData = [];
+        let displayedCount = 10;
+
+        // DOM Elements
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('fileName');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+
+        // Initialize charts
+        let sentimentPieChart;
+        let sentimentBarChart;
+
+        // Colors for charts
+        const sentimentColors = {
+            'Muy negativo': '#ef4444',
+            'Negativo': '#f97316',
+            'Neutral': '#f59e0b',
+            'Positivo': '#3b82f6',
+            'Muy positivo': '#10b981'
+        };
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            loadData();
+            setupEventListeners();
         });
+
+        function setupEventListeners() {
+            // File input change
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    fileName.textContent = e.target.files[0].name;
+                }
+            });
+
+            // Upload button click
+            uploadBtn.addEventListener('click', uploadFile);
+
+            // Load more button
+            document.getElementById('loadMore').addEventListener('click', loadMoreOpinions);
+        }
+
+        function initCharts() {
+            const pieCtx = document.getElementById('sentimentPieChart').getContext('2d');
+            sentimentPieChart = new Chart(pieCtx, {
+                type: 'pie',
+                data: {
+                    labels: ['Muy negativo', 'Negativo', 'Neutral', 'Positivo', 'Muy positivo'],
+                    datasets: [{
+                        data: [0, 0, 0, 0, 0],
+                        backgroundColor: [
+                            sentimentColors['Muy negativo'],
+                            sentimentColors['Negativo'],
+                            sentimentColors['Neutral'],
+                            sentimentColors['Positivo'],
+                            sentimentColors['Muy positivo']
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+
+            const barCtx = document.getElementById('sentimentBarChart').getContext('2d');
+            sentimentBarChart = new Chart(barCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Muy negativo', 'Negativo', 'Neutral', 'Positivo', 'Muy positivo'],
+                    datasets: [{
+                        label: 'Distribución',
+                        data: [0, 0, 0, 0, 0],
+                        backgroundColor: [
+                            sentimentColors['Muy negativo'],
+                            sentimentColors['Negativo'],
+                            sentimentColors['Neutral'],
+                            sentimentColors['Positivo'],
+                            sentimentColors['Muy positivo']
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function loadData() {
+            axios.get('/analyze_sentiments')
+                .then(response => {
+                    if (response.data.message === 'Análisis de sentimientos completado') {
+                        fetchCSVData();
+                    } else {
+                        console.error('Error al analizar sentimientos:', response.data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error al cargar datos:', error);
+                    fetchCSVData();
+                });
+        }
+
+        function fetchCSVData() {
+            axios.get('/download_processed_csv', { responseType: 'text' })
+                .then(response => {
+                    const rows = response.data.split('\n');
+                    const headers = rows[0].split(',');
+                    
+                    currentData = [];
+                    for (let i = 1; i < rows.length; i++) {
+                        const values = rows[i].split(',');
+                        if (values.length === headers.length) {
+                            const row = {};
+                            headers.forEach((header, index) => {
+                                row[header.trim()] = values[index] ? values[index].trim() : '';
+                            });
+                            currentData.push(row);
+                        }
+                    }
+
+                    if (currentData.length > 0) {
+                        updateDashboard(currentData);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error al obtener datos CSV:', error);
+                });
+        }
+
+        function uploadFile() {
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert('Por favor selecciona un archivo primero');
+                return;
+            }
+
+            loadingIndicator.classList.remove('hidden');
+            uploadBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            axios.post('/upload_opinions', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            })
+            .then(response => {
+                loadData();
+                fileName.textContent = 'Seleccionar archivo CSV';
+                fileInput.value = '';
+            })
+            .catch(error => {
+                console.error('Error al subir archivo:', error);
+                alert('Error al procesar el archivo');
+            })
+            .finally(() => {
+                loadingIndicator.classList.add('hidden');
+                uploadBtn.disabled = false;
+            });
+        }
+
+        function updateDashboard(data) {
+            // Update stats
+            document.getElementById('totalOpinions').textContent = data.length;
+            
+            const sentimentCounts = {
+                'Muy negativo': 0,
+                'Negativo': 0,
+                'Neutral': 0,
+                'Positivo': 0,
+                'Muy positivo': 0
+            };
+
+            data.forEach(item => {
+                if (item.sentimiento_predicho in sentimentCounts) {
+                    sentimentCounts[item.sentimiento_predicho]++;
+                }
+            });
+
+            document.getElementById('neutralCount').textContent = sentimentCounts['Neutral'];
+            document.getElementById('positiveCount').textContent = sentimentCounts['Positivo'] + sentimentCounts['Muy positivo'];
+            document.getElementById('negativeCount').textContent = sentimentCounts['Negativo'] + sentimentCounts['Muy negativo'];
+
+            // Update charts
+            sentimentPieChart.data.datasets[0].data = [
+                sentimentCounts['Muy negativo'],
+                sentimentCounts['Negativo'],
+                sentimentCounts['Neutral'],
+                sentimentCounts['Positivo'],
+                sentimentCounts['Muy positivo']
+            ];
+            sentimentPieChart.update();
+
+            sentimentBarChart.data.datasets[0].data = [
+                sentimentCounts['Muy negativo'],
+                sentimentCounts['Negativo'],
+                sentimentCounts['Neutral'],
+                sentimentCounts['Positivo'],
+                sentimentCounts['Muy positivo']
+            ];
+            sentimentBarChart.update();
+
+            // Update word cloud and table
+            updateWordCloud(data);
+            updateOpinionsTable(data);
+        }
+
+        function updateWordCloud(data) {
+            const wordCloud = document.getElementById('wordCloud');
+            wordCloud.innerHTML = '';
+
+            // Simple example - in a real app you'd perform proper text analysis
+            const sampleWords = [
+                { text: 'excelente', sentiment: 'Muy positivo', size: 24 },
+                { text: 'bueno', sentiment: 'Positivo', size: 18 },
+                { text: 'normal', sentiment: 'Neutral', size: 16 },
+                { text: 'malo', sentiment: 'Negativo', size: 18 },
+                { text: 'terrible', sentiment: 'Muy negativo', size: 24 },
+                { text: 'satisfecho', sentiment: 'Positivo', size: 16 },
+                { text: 'insatisfecho', sentiment: 'Negativo', size: 16 }
+            ];
+
+            sampleWords.forEach(word => {
+                const span = document.createElement('span');
+                span.className = `px-3 py-1 rounded-full text-white bg-${getColorClass(word.sentiment)}`;
+                span.style.fontSize = `${word.size}px`;
+                span.textContent = word.text;
+                wordCloud.appendChild(span);
+            });
+        }
+
+        function getColorClass(sentiment) {
+            switch(sentiment) {
+                case 'Muy positivo': return 'emerald-500';
+                case 'Positivo': return 'blue-500';
+                case 'Neutral': return 'yellow-500';
+                case 'Negativo': return 'orange-500';
+                case 'Muy negativo': return 'red-500';
+                default: return 'gray-500';
+            }
+        }
+
+        function updateOpinionsTable(data) {
+            const tableBody = document.getElementById('opinionsTableBody');
+            tableBody.innerHTML = '';
+
+            const endIndex = Math.min(displayedCount, data.length);
+            
+            for (let i = 0; i < endIndex; i++) {
+                const item = data[i];
+                const row = document.createElement('tr');
+                
+                // Trim text if too long
+                let text = item.transcription || item.opinion || '';
+                if (text.length > 100) {
+                    text = text.substring(0, 100) + '...';
+                }
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${text}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 py-1 text-xs rounded-full ${getTextColorClass(item.sentimiento_predicho)}">
+                            ${item.sentimiento_predicho || 'Sin análisis'}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${item.rank || 'N/A'}
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            }
+        }
+
+        function getTextColorClass(sentiment) {
+            switch(sentiment) {
+                case 'Muy positivo': return 'bg-emerald-100 text-emerald-800';
+                case 'Positivo': return 'bg-blue-100 text-blue-800';
+                case 'Neutral': return 'bg-yellow-100 text-yellow-800';
+                case 'Negativo': return 'bg-orange-100 text-orange-800';
+                case 'Muy negativo': return 'bg-red-100 text-red-800';
+                default: return 'bg-gray-100 text-gray-800';
+            }
+        }
+
+        function loadMoreOpinions() {
+            displayedCount += 10;
+            updateOpinionsTable(currentData);
+            
+            if (displayedCount >= currentData.length) {
+                document.getElementById('loadMore').style.display = 'none';
+            }
+        }
+
+        function exportToCSV() {
+            if (currentData.length === 0) {
+                alert('No hay datos para exportar');
+                return;
+            }
+
+            // Convert data to CSV
+            const headers = Object.keys(currentData[0]);
+            let csv = headers.join(',') + '\n';
+            
+            currentData.forEach(row => {
+                const values = headers.map(header => {
+                    const value = row[header] || '';
+                    return `"${value.toString().replace(/"/g, '""')}"`;
+                });
+                csv += values.join(',') + '\n';
+            });
+
+            // Create download link
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'analisis_sentimientos.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
     </script>
 </body>
 </html>
