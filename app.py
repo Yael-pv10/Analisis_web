@@ -30,6 +30,50 @@ TRANSCRIPTIONS_CSV = 'transcriptions.csv'
 PROCESSED_CSV = 'processed_transcriptions.csv'
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
+# Cargar modelo preentrenado multilingüe BERT
+classifier = pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
+
+# Diccionarios para traducir sentimiento
+traduccion_sentimientos = {
+    "1 star": "Muy negativo",
+    "2 stars": "Negativo",
+    "3 stars": "Neutral",
+    "4 stars": "Positivo",
+    "5 stars": "Muy positivo"
+}
+
+rank_map = {
+    "1 star": 1,
+    "2 stars": 2,
+    "3 stars": 3,
+    "4 stars": 4,
+    "5 stars": 5
+}
+def predecir_sentimiento(texto):
+    if pd.isna(texto) or texto.strip() == "":
+        return {"label": "No disponible", "rank": None}
+    try:
+        resultado = classifier(texto)[0]["label"]
+        return {
+            "label": traduccion_sentimientos.get(resultado, resultado),
+            "rank": rank_map.get(resultado)
+        }
+    except Exception as e:
+        print(f"Error con texto: {texto[:30]}... -> {e}")
+        return {"label": "Error", "rank": None}
+
+@app.route('/analyze_sentiments', methods=['GET'])
+def analyze_sentiments():
+    if not os.path.exists(TRANSCRIPTIONS_CSV):
+        return jsonify({'error': 'No hay archivo de transcripciones'}), 404
+    df = pd.read_csv(TRANSCRIPTIONS_CSV)
+    # Aplicar modelo a todas las transcripciones
+    resultados = df["transcription"].apply(predecir_sentimiento)
+    df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
+    df["rank"] = resultados.apply(lambda x: x["rank"])
+    # Guardar como CSV para análisis posterior
+    df.to_csv(RESULTS_CSV, index=False, encoding='utf-8-sig')
+    return jsonify({'message': 'Análisis de sentimientos completado', 'results_file': RESULTS_CSV}), 200
 
 @app.route('/upload', methods=['POST'])
 def upload_audio():

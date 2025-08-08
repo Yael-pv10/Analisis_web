@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualización de Sentimientos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <header class="bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="flex items-center mb-4 md:mb-0">
+                    <i class="fas fa-chart-pie text-3xl mr-3"></i>
+                    <h1 class="text-2xl md:text-3xl font-bold">Análisis de Sentimientos</h1>
+                </div>
+                <nav class="flex space-x-4">
+                    <a href="/" class="px-3 py-2 rounded-lg hover:bg-white hover:bg-opacity-20 transition">Inicio</a>
+                    <a href="/sentiment_visualization" class="px-3 py-2 rounded-lg bg-white bg-opacity-20 transition">Resultados</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-gray-800 mb-4">Visualización de Sentimientos</h1>
+        
+        <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Distribución de Sentimientos</h2>
+            <div class="flex flex-col lg:flex-row gap-6">
+                <div class="lg:w-1/2">
+                    <img src="data:image/png;base64,{{ graph_url }}" alt="Gráfico de Sentimientos" class="w-full h-auto">
+                </div>
+                <div class="lg:w-1/2 space-y-4">
+                    <div class="p-4 bg-green-50 rounded-lg border-l-4 border-green-500">
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium">Satisfacción Promedio</span>
+                            <span class="text-xl font-bold" id="avgSatisfaction">0.0</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="p-3 bg-green-100 rounded-lg text-center">
+                            <p class="text-sm text-green-800">Positivas</p>
+                            <p class="text-xl font-bold" id="positiveCount">0</p>
+                        </div>
+                        <div class="p-3 bg-yellow-100 rounded-lg text-center">
+                            <p class="text-sm text-yellow-800">Neutrales</p>
+                            <p class="text-xl font-bold" id="neutralCount">0</p>
+                        </div>
+                        <div class="p-3 bg-red-100 rounded-lg text-center">
+                            <p class="text-sm text-red-800">Negativas</p>
+                            <p class="text-xl font-bold" id="negativeCount">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4">Conteo de Sentimientos</h2>
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sentimiento</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for sentiment, count in sentiment_counts.items() %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ sentiment }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+    <footer class="bg-gray-800 text-white py-8 mt-12">
+        <div class="container mx-auto px-4">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-4 md:mb-0">
+                    <h2 class="text-xl font-bold mb-2">AudioSentiment</h2>
+                    <p class="text-gray-400">Herramienta de análisis de sentimientos en audio</p>
+                </div>
+                <div class="flex space-x-6">
+                    <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-github text-xl"></i></a>
+                    <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-twitter text-xl"></i></a>
+                    <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-linkedin text-xl"></i></a>
+                </div>
+            </div>
+            <div class="border-t border-gray-700 mt-6 pt-6 text-center text-gray-400 text-sm">
+                © 2023 AudioSentiment. Todos los derechos reservados.
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Script to update the sentiment stats
+        document.addEventListener('DOMContentLoaded', function() {
+            const sentimentStats = JSON.parse('{{ sentiment_counts|tojson|safe }}');
+            // Calculate metrics
+            let positive = 0, neutral = 0, negative = 0;
+            for (const [key, value] of Object.entries(sentimentStats)) {
+                if (key.includes('Positivo')) positive += value;
+                else if (key.includes('Neutral')) neutral += value;
+                else if (key.includes('Negativo')) negative += value;
+            }
+            
+            // Update UI
+            document.getElementById('positiveCount').textContent = positive;
+            document.getElementById('neutralCount').textContent = neutral;
+            document.getElementById('negativeCount').textContent = negative;
+            
+            const total = positive + neutral + negative;
+            const avgScore = total ? ((positive * 1 + neutral * 0.5) / total).toFixed(2) : 0;
+            document.getElementById('avgSatisfaction').textContent = avgScore;
+        });
+    </script>
+</body>
+</html>
