@@ -12,5 +12,3 @@ Flask-Dance
 transformers
 ftfy
 torch
-tensorflow
-flax
