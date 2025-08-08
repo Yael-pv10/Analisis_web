@@ -30,6 +30,7 @@ CORS(app)
 AUDIO_DIR = 'audios'
 TRANSCRIPTIONS_CSV = 'transcriptions.csv'
 PROCESSED_CSV = 'processed_transcriptions.csv'
+RESULTS_CSV = 'opiniones_con_sentimientos.csv'
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
 # Modelo de análisis de sentimientos
