@@ -64,8 +64,8 @@ def predecir_sentimiento(texto):
         print(f"Error con texto: {texto[:30]}... -> {e}")
         return {"label": "Error", "rank": None}
 
-@app.route('/ver_resultados_sentimientos', methods=['GET'])
-def ver_resultados_sentimientos():
+@app.route('/analyze_sentiments', methods=['GET'])
+def analyze_sentiments():
     if not os.path.exists(TRANSCRIPTIONS_CSV):
         return jsonify({'error': 'No hay archivo de transcripciones'}), 404
 
@@ -82,8 +82,8 @@ def ver_resultados_sentimientos():
     # Guardar CSV para descarga si se desea
     df.to_csv(RESULTS_CSV, index=False, encoding='utf-8-sig')
 
-    # Mostrar resultados en una página HTML
-    return render_template('Analizar_Sentimientos.html', tablas=[df.to_html(classes='table table-striped', index=False, justify='center')], titles=df.columns.values)
+    # Devolver resultados en formato JSON
+    return jsonify(df.to_dict(orient='records')), 200
 
 @app.route('/upload', methods=['POST'])
 def upload_audio():
