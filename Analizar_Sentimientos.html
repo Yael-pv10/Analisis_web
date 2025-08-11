@@ -345,13 +345,16 @@
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
 
-            axios.post('/upload_opinions', formData, {
+            // Cambiar la URL del endpoint a '/analyze_sentiments'
+            axios.post('/analyze_sentiments', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data'
                 }
             })
             .then(response => {
-                loadData();
+                // Aquí puedes manejar la respuesta y actualizar el dashboard
+                const data = response.data;
+                updateDashboard(data); // Asegúrate de que esta función maneje los datos correctamente
                 fileName.textContent = 'Seleccionar archivo CSV';
                 fileInput.value = '';
             })
@@ -365,52 +368,52 @@
             });
         }
 
+
         function updateDashboard(data) {
-                // Update stats
-                document.getElementById('totalOpinions').textContent = data.length;
-                
-                const sentimentCounts = {
-                    'Muy negativo': 0,
-                    'Negativo': 0,
-                    'Neutral': 0,
-                    'Positivo': 0,
-                    'Muy positivo': 0
-                };
+    // Actualizar estadísticas
+    document.getElementById('totalOpinions').textContent = data.length;
 
-                data.forEach(item => {
-                    if (item.sentimiento_predicho in sentimentCounts) {
-                        sentimentCounts[item.sentimiento_predicho]++;
-                    }
-                });
+    const sentimentCounts = {
+        'Muy negativo': 0,
+        'Negativo': 0,
+        'Neutral': 0,
+        'Positivo': 0,
+        'Muy positivo': 0
+    };
 
-                document.getElementById('neutralCount').textContent = sentimentCounts['Neutral'];
-                document.getElementById('positiveCount').textContent = sentimentCounts['Positivo'] + sentimentCounts['Muy positivo'];
-                document.getElementById('negativeCount').textContent = sentimentCounts['Negativo'] + sentimentCounts['Muy negativo'];
+    data.forEach(item => {
+        if (item.sentimiento_predicho in sentimentCounts) {
+            sentimentCounts[item.sentimiento_predicho]++;
+        }
+    });
 
-                // Update charts
-                sentimentPieChart.data.datasets[0].data = [
-                    sentimentCounts['Muy negativo'],
-                    sentimentCounts['Negativo'],
-                    sentimentCounts['Neutral'],
-                    sentimentCounts['Positivo'],
-                    sentimentCounts['Muy positivo']
-                ];
-                sentimentPieChart.update();
+    document.getElementById('neutralCount').textContent = sentimentCounts['Neutral'];
+    document.getElementById('positiveCount').textContent = sentimentCounts['Positivo'] + sentimentCounts['Muy positivo'];
+    document.getElementById('negativeCount').textContent = sentimentCounts['Negativo'] + sentimentCounts['Muy negativo'];
 
-                sentimentBarChart.data.datasets[0].data = [
-                    sentimentCounts['Muy negativo'],
-                    sentimentCounts['Negativo'],
-                    sentimentCounts['Neutral'],
-                    sentimentCounts['Positivo'],
-                    sentimentCounts['Muy positivo']
-                ];
-                sentimentBarChart.update();
+    // Actualizar gráficos
+    sentimentPieChart.data.datasets[0].data = [
+        sentimentCounts['Muy negativo'],
+        sentimentCounts['Negativo'],
+        sentimentCounts['Neutral'],
+        sentimentCounts['Positivo'],
+        sentimentCounts['Muy positivo']
+    ];
+    sentimentPieChart.update();
 
-                // Update word cloud and table
-                updateWordCloud(data);
-                updateOpinionsTable(data);
-            }
+    sentimentBarChart.data.datasets[0].data = [
+        sentimentCounts['Muy negativo'],
+        sentimentCounts['Negativo'],
+        sentimentCounts['Neutral'],
+        sentimentCounts['Positivo'],
+        sentimentCounts['Muy positivo']
+    ];
+    sentimentBarChart.update();
 
+    // Actualizar nube de palabras y tabla
+    updateWordCloud(data);
+    updateOpinionsTable(data);
+}
 
         function updateWordCloud(data) {
             const wordCloud = document.getElementById('wordCloud');
@@ -448,34 +451,35 @@
         }
 
         function updateOpinionsTable(data) {
-    const tableBody = document.getElementById('opinionsTableBody');
-    tableBody.innerHTML = '';
+            const tableBody = document.getElementById('opinionsTableBody');
+            tableBody.innerHTML = '';
 
-    data.forEach(item => {
-        const row = document.createElement('tr');
-        
-        // Trim text if too long
-        let text = item.transcription || '';
-        if (text.length > 100) {
-            text = text.substring(0, 100) + '...';
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                
+                // Trim text if too long
+                let text = item.transcription || item.opinion || ''; // Asegúrate de que la columna correcta se use
+                if (text.length > 100) {
+                    text = text.substring(0, 100) + '...';
+                }
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${text}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 py-1 text-xs rounded-full ${getTextColorClass(item.sentimiento_predicho)}">
+                            ${item.sentimiento_predicho || 'Sin análisis'}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${item.rank || 'N/A'}
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
         }
-        
-        row.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-900">${text}</div>
-            </td>
-            <td class="px-6 py-4 whitespace-nowrap">
-                <span class="px-2 py-1 text-xs rounded-full ${getTextColorClass(item.sentimiento_predicho)}">
-                    ${item.sentimiento_predicho || 'Sin análisis'}
-                </span>
-            </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                ${item.rank || 'N/A'}
-            </td>
-        `;
-        tableBody.appendChild(row);
-    });
-}
+
 
 
         function getTextColorClass(sentiment) {

@@ -60,6 +60,37 @@ def upload_audio():
 
     return jsonify({'transcription': transcription}), 200
 
+@app.route('/analyze_sentiments', methods=['POST'])
+def analyze_sentiments():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    # Leer el archivo Excel
+    df = pd.read_excel(file)
+    df["opinion"] = df["opinion"].apply(lambda x: fix_text(str(x)) if pd.notna(x) else x)
+    # Aplicar modelo a todas las opiniones
+    resultados = df["opinion"].apply(predecir_sentimiento)
+    df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
+    df["rank"] = resultados.apply(lambda x: x["rank"])
+    # Guardar como CSV para análisis posterior
+    df.to_csv("opiniones_con_sentimientos.csv", index=False, encoding='utf-8-sig')
+    return jsonify(df.to_dict(orient='records')), 200
+
+    
+def predecir_sentimiento(texto):
+    if pd.isna(texto) or texto.strip() == "":
+        return {"label": "No disponible", "rank": None}
+    try:
+        resultado = classifier(texto)[0]["label"]
+        return {
+            "label": traduccion_sentimientos.get(resultado, resultado),
+            "rank": rank_map.get(resultado)
+        }
+    except Exception as e:
+        print(f"Error con texto: {texto[:30]}... -> {e}")
+        return {"label": "Error", "rank": None}
 
 def transcribe_audio(audio_path):
     recognizer = sr.Recognizer()
