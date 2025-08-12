@@ -291,7 +291,7 @@
         }
 
         function loadData() {
-    axios.get('/analyze_sentiments')
+    axios.get('https://audio-preprocessing-api-production.up.railway.app/analyze_sentiments')
         .then(response => {
             const data = response.data;
             if (data.length > 0) {
