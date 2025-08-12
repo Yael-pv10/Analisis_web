@@ -11,3 +11,4 @@ es-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/es
 Flask-Dance
 transformers
 ftfy
+torch
