@@ -307,7 +307,7 @@
 
 
         function fetchCSVData() {
-            axios.get('/download_processed_csv', { responseType: 'text' })
+            axios.get('https://audio-preprocessing-api-production.up.railway.app/download_processed_csv', { responseType: 'text' })
                 .then(response => {
                     const rows = response.data.split('\n');
                     const headers = rows[0].split(',');
@@ -346,7 +346,7 @@
             formData.append('file', fileInput.files[0]);
 
             // Cambiar la URL del endpoint a '/analyze_sentiments'
-            axios.post('/analyze_sentiments', formData, {
+            axios.post('https://audio-preprocessing-api-production.up.railway.app/analyze_sentiments', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data'
                 }
