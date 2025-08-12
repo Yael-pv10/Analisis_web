@@ -73,14 +73,14 @@ def analyze_sentiments():
         df = pd.read_csv(csv_path)
         
         # Asegurarse de que exista la columna 'opinion'
-        if "opinion" not in df.columns:
+        if "transciption" not in df.columns:
             return jsonify({'error': 'El CSV no contiene la columna "opinion"'}), 400
 
         # Limpieza de texto
-        df["opinion"] = df["opinion"].apply(lambda x: fix_text(str(x)) if pd.notna(x) else x)
+        df["transcription"] = df["transcription"].apply(lambda x: fix_text(str(x)) if pd.notna(x) else x)
         
         # Aplicar modelo
-        resultados = df["opinion"].apply(predecir_sentimiento)
+        resultados = df["transcription"].apply(predecir_sentimiento)
         df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
         df["rank"] = resultados.apply(lambda x: x["rank"])
         
