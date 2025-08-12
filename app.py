@@ -8,6 +8,8 @@ import uuid
 from ftfy import fix_text
 from transformers import pipeline
 
+classifier = pipeline("sentiment-analysis", model="bert-base-multilingual-uncased")
+
 # Preprocesamiento
 import nltk
 import spacy
