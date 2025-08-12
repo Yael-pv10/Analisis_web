@@ -8,7 +8,7 @@ import uuid
 from ftfy import fix_text
 from transformers import pipeline
 
-classifier = pipeline("sentiment-analysis", model="bert-base-multilingual-uncased")
+classifier = pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
 
 # Preprocesamiento
 import nltk
@@ -33,6 +33,23 @@ AUDIO_DIR = 'audios'
 TRANSCRIPTIONS_CSV = 'transcriptions.csv'
 PROCESSED_CSV = 'processed_transcriptions.csv'
 os.makedirs(AUDIO_DIR, exist_ok=True)
+
+traduccion_sentimientos = {
+    "1 star": "Muy negativo",
+    "2 stars": "Negativo",
+    "3 stars": "Neutral",
+    "4 stars": "Positivo",
+    "5 stars": "Muy positivo"
+}
+
+# Opcional: asignar un rank numérico para orden o filtrado
+rank_map = {
+    "1 star": 1,
+    "2 stars": 2,
+    "3 stars": 3,
+    "4 stars": 4,
+    "5 stars": 5
+}
 
 
 @app.route('/upload', methods=['POST'])
@@ -114,20 +131,17 @@ def analyze_sentiments():
         return jsonify({'error': str(e)}), 500
     
 def predecir_sentimiento(texto):
-    print(f"📌 Analizando texto: {texto[:50]}...")
-
     if pd.isna(texto) or texto.strip() == "":
-        print("⚠️ Texto vacío o NaN")
         return {"label": "No disponible", "rank": None}
-
     try:
-        resultado = classifier(texto)[0]["label"]
-        label_traducido = traduccion_sentimientos.get(resultado, resultado)
-        rank_val = rank_map.get(resultado)
-        print(f"✅ Predicción: {label_traducido}, Rank: {rank_val}")
-        return {"label": label_traducido, "rank": rank_val}
+        resultado = classifier(texto)[0]  # resultado es un dict con 'label' y 'score'
+        etiqueta = resultado["label"]
+        return {
+            "label": traduccion_sentimientos.get(etiqueta, etiqueta),
+            "rank": rank_map.get(etiqueta)
+        }
     except Exception as e:
-        print(f"❌ Error con texto: {texto[:30]}... -> {e}")
+        print(f"Error con texto: {texto[:30]}... -> {e}")
         return {"label": "Error", "rank": None}
 
 
