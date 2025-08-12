@@ -291,20 +291,19 @@
         }
 
         function loadData() {
-    axios.post('https://audio-preprocessing-api-production.up.railway.app/analyze_sentiments')
-        .then(response => {
-            const data = response.data;
-            if (data.length > 0) {
-                updateDashboard(data);
-            } else {
-                console.error('No se encontraron datos para analizar.');
-            }
-        })
-        .catch(error => {
-            console.error('Error al cargar datos:', error);
-        });
-}
-
+            axios.post('https://audio-preprocessing-api-production.up.railway.app/analyze_sentiments')
+                .then(response => {
+                    const data = response.data;
+                    if (data.length > 0) {
+                        updateDashboard(data);
+                    } else {
+                        console.error('No se encontraron datos para analizar.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error al cargar datos:', error);
+                });
+        }
 
         function fetchCSVData() {
             axios.post('https://audio-preprocessing-api-production.up.railway.app/download_processed_csv', { responseType: 'text' })

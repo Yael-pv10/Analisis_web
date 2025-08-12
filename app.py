@@ -62,21 +62,36 @@ def upload_audio():
 
 @app.route('/analyze_sentiments', methods=['POST'])
 def analyze_sentiments():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    # Leer el archivo Excel
-    df = pd.read_excel(file)
-    df["opinion"] = df["opinion"].apply(lambda x: fix_text(str(x)) if pd.notna(x) else x)
-    # Aplicar modelo a todas las opiniones
-    resultados = df["opinion"].apply(predecir_sentimiento)
-    df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
-    df["rank"] = resultados.apply(lambda x: x["rank"])
-    # Guardar como CSV para análisis posterior
-    df.to_csv("opiniones_con_sentimientos.csv", index=False, encoding='utf-8-sig')
-    return jsonify(df.to_dict(orient='records')), 200
+    try:
+        # Ruta fija al CSV en el servidor
+        csv_path = "transcriptions.csv"
+        
+        if not os.path.exists(csv_path):
+            return jsonify({'error': 'El archivo transcriptions.csv no existe'}), 404
+
+        # Leer el archivo CSV
+        df = pd.read_csv(csv_path)
+        
+        # Asegurarse de que exista la columna 'opinion'
+        if "opinion" not in df.columns:
+            return jsonify({'error': 'El CSV no contiene la columna "opinion"'}), 400
+
+        # Limpieza de texto
+        df["opinion"] = df["opinion"].apply(lambda x: fix_text(str(x)) if pd.notna(x) else x)
+        
+        # Aplicar modelo
+        resultados = df["opinion"].apply(predecir_sentimiento)
+        df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
+        df["rank"] = resultados.apply(lambda x: x["rank"])
+        
+        # Guardar resultado
+        df.to_csv("opiniones_con_sentimientos.csv", index=False, encoding='utf-8-sig')
+        
+        return jsonify(df.to_dict(orient='records')), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
     
 def predecir_sentimiento(texto):
