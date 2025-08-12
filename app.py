@@ -62,50 +62,70 @@ def upload_audio():
 
 @app.route('/analyze_sentiments', methods=['POST'])
 def analyze_sentiments():
+    print("🔹 Iniciando análisis de sentimientos...")
+
+    # Verificar si el archivo CSV existe
+    file_path = "transcriptions.csv"
+    if not os.path.exists(file_path):
+        print(f"❌ No se encontró el archivo: {file_path}")
+        return jsonify({'error': 'Archivo CSV no encontrado'}), 400
+
     try:
-        # Ruta fija al CSV en el servidor
-        csv_path = "transcriptions.csv"
-        
-        if not os.path.exists(csv_path):
-            return jsonify({'error': 'El archivo transcriptions.csv no existe'}), 404
+        print(f"📂 Leyendo archivo: {file_path}")
+        df = pd.read_csv(file_path)
+        print(f"✅ Archivo leído correctamente. Columnas: {df.columns.tolist()}")
 
-        # Leer el archivo CSV
-        df = pd.read_csv(csv_path)
-        
-        # Asegurarse de que exista la columna 'opinion'
-        if "transciption" not in df.columns:
-            return jsonify({'error': 'El CSV no contiene la columna "opinion"'}), 400
+        # Verificar columna transcription
+        if "transcription" not in df.columns:
+            print("❌ La columna 'transcription' no existe en el CSV")
+            return jsonify({'error': "Columna 'transcription' no encontrada"}), 400
 
-        # Limpieza de texto
-        df["transcription"] = df["transcription"].apply(lambda x: fix_text(str(x)) if pd.notna(x) else x)
-        
+        # Preprocesar texto
+        print("🔹 Preprocesando texto...")
+        df["transcription"] = df["transcription"].apply(
+            lambda x: fix_text(str(x)) if pd.notna(x) else x
+        )
+
         # Aplicar modelo
+        print("🔹 Aplicando modelo de predicción...")
         resultados = df["transcription"].apply(predecir_sentimiento)
+
+        # Revisar primeros resultados
+        print("🔍 Primeros resultados de predicción:")
+        for i, r in enumerate(resultados.head(5)):
+            print(f"   {i+1}: {r}")
+
         df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
         df["rank"] = resultados.apply(lambda x: x["rank"])
-        
-        # Guardar resultado
-        df.to_csv("opiniones_con_sentimientos.csv", index=False, encoding='utf-8-sig')
-        
+
+        # Guardar CSV
+        output_path = "opiniones_con_sentimientos.csv"
+        df.to_csv(output_path, index=False, encoding='utf-8-sig')
+        print(f"✅ Resultados guardados en: {output_path}")
+
         return jsonify(df.to_dict(orient='records')), 200
-    
+
     except Exception as e:
+        print(f"❌ Error en analyze_sentiments: {e}")
         return jsonify({'error': str(e)}), 500
-
-
     
 def predecir_sentimiento(texto):
+    print(f"📌 Analizando texto: {texto[:50]}...")
+
     if pd.isna(texto) or texto.strip() == "":
+        print("⚠️ Texto vacío o NaN")
         return {"label": "No disponible", "rank": None}
+
     try:
         resultado = classifier(texto)[0]["label"]
-        return {
-            "label": traduccion_sentimientos.get(resultado, resultado),
-            "rank": rank_map.get(resultado)
-        }
+        label_traducido = traduccion_sentimientos.get(resultado, resultado)
+        rank_val = rank_map.get(resultado)
+        print(f"✅ Predicción: {label_traducido}, Rank: {rank_val}")
+        return {"label": label_traducido, "rank": rank_val}
     except Exception as e:
-        print(f"Error con texto: {texto[:30]}... -> {e}")
+        print(f"❌ Error con texto: {texto[:30]}... -> {e}")
         return {"label": "Error", "rank": None}
+
 
 def transcribe_audio(audio_path):
     recognizer = sr.Recognizer()
