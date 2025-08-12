@@ -6,6 +6,7 @@ from flask_cors import CORS
 from pydub import AudioSegment
 import uuid
 from ftfy import fix_text
+from transformers import pipeline
 
 # Preprocesamiento
 import nltk
