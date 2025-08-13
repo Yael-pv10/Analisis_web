@@ -6,157 +6,47 @@ from flask_cors import CORS
 from pydub import AudioSegment
 import uuid
 from ftfy import fix_text
-from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
-import logging
-from celery import Celery
-import time
+from transformers import pipeline
 
-# Configuración de Celery para procesamiento asíncrono
+classifier = pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
+
+# Preprocesamiento
+import nltk
+import spacy
+import string
+from sklearn.feature_extraction.text import TfidfVectorizer
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+
+# Inicializaciones
+nltk.download('punkt')
+nltk.download('punkt_tab')
+nltk.download('stopwords')
+nlp = spacy.load("es_core_news_sm")
+stop_words = set(stopwords.words('spanish'))
+
+# Configuración del servidor
 app = Flask(__name__)
-app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
-app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
 CORS(app)
 
-celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
-celery.conf.update(app.config)
-
-# Configurar logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Cargar modelo ligero (25x más rápido que BERT)
-MODEL_NAME = "distilbert-base-uncased-finetuned-sst-2-english"  # Modelo optimizado para CPU
-MODEL_CACHE = {}
-
-def load_model():
-    if "model" not in MODEL_CACHE:
-        logger.info("Cargando modelo ligero...")
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-            model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
-            MODEL_CACHE["model"] = pipeline(
-                "sentiment-analysis",
-                model=model,
-                tokenizer=tokenizer,
-                device=-1  # Forzar CPU
-            )
-            logger.info("Modelo ligero cargado exitosamente")
-        except Exception as e:
-            logger.error(f"Error cargando modelo: {e}")
-            MODEL_CACHE["model"] = None
-    return MODEL_CACHE["model"]
-
-classifier = load_model()
-
-# Configuraciones
 AUDIO_DIR = 'audios'
+TRANSCRIPTIONS_CSV = 'transcriptions.csv'
+PROCESSED_CSV = 'processed_transcriptions.csv'
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-# Mapeo de sentimientos
-SENTIMENT_MAP = {
-    "POSITIVE": "Positivo",
-    "NEGATIVE": "Negativo",
-    "NEUTRAL": "Neutral"
+traduccion_sentimientos = {
+    "1 stars": "Negativo",
+    "2 stars": "Neutral",
+    "3 stars": "Positivo",
 }
 
-@celery.task(bind=True)
-def async_analyze_batch(self, textos):
-    """Tarea Celery para análisis asíncrono"""
-    classifier = load_model()
-    if not classifier:
-        return {"status": "error", "error": "Modelo no disponible"}
-    
-    total = len(textos)
-    resultados = []
-    
-    for i, texto in enumerate(textos):
-        try:
-            if pd.isna(texto) or str(texto).strip() == "":
-                resultados.append({
-                    "label": "No disponible",
-                    "score": 0,
-                    "sentimiento": "No disponible"
-                })
-                continue
-            
-            prediction = classifier(str(texto))[0]
-            resultados.append({
-                "label": prediction["label"],
-                "score": prediction["score"],
-                "sentimiento": SENTIMENT_MAP.get(prediction["label"], prediction["label"])
-            })
-            
-            # Actualizar progreso (0-100)
-            self.update_state(state='PROGRESS',
-                            meta={'current': i+1, 
-                                 'total': total,
-                                 'progress': int(((i+1)/total)*100)})
-            
-            # Pequeña pausa para CPU
-            time.sleep(0.05)
-            
-        except Exception as e:
-            logger.error(f"Error procesando texto: {e}")
-            resultados.append({
-                "label": "Error",
-                "score": 0,
-                "sentimiento": "Error"
-            })
-    
-    return {
-        "status": "completed",
-        "results": resultados,
-        "progress": 100
-    }
+# Opcional: asignar un rank numérico para orden o filtrado
+rank_map = {
+    "1 star": 1,
+    "2 stars": 2,
+    "3 stars": 3,
 
-@app.route('/start_async_analysis', methods=['POST'])
-def start_async_analysis():
-    """Endpoint para iniciar análisis asíncrono"""
-    if not os.path.exists('transcriptions.csv'):
-        return jsonify({"error": "No hay transcripciones para analizar"}), 400
-    
-    df = pd.read_csv('transcriptions.csv')
-    textos = df['transcription'].apply(lambda x: fix_text(str(x)) if pd.notna(x) else x).tolist()
-    
-    # Iniciar tarea asíncrona
-    task = async_analyze_batch.apply_async(args=[textos])
-    
-    return jsonify({
-        "task_id": task.id,
-        "status": "PENDING",
-        "progress": 0
-    }), 202
-
-@app.route('/check_status/<task_id>', methods=['GET'])
-def check_status(task_id):
-    """Endpoint para verificar estado de tarea"""
-    task = async_analyze_batch.AsyncResult(task_id)
-    
-    if task.state == 'PENDING':
-        response = {
-            'status': 'PENDING',
-            'progress': 0
-        }
-    elif task.state == 'PROGRESS':
-        response = {
-            'status': 'PROGRESS',
-            'progress': task.info.get('progress', 0),
-            'current': task.info.get('current', 0),
-            'total': task.info.get('total', 1)
-        }
-    elif task.state == 'SUCCESS':
-        response = {
-            'status': 'COMPLETED',
-            'progress': 100,
-            'results': task.info.get('results', [])
-        }
-    else:
-        response = {
-            'status': 'FAILED',
-            'error': str(task.info)
-        }
-    
-    return jsonify(response)
+}
 
 
 @app.route('/upload', methods=['POST'])
@@ -188,6 +78,69 @@ def upload_audio():
 
     return jsonify({'transcription': transcription}), 200
 
+@app.route('/analyze_sentiments', methods=['POST'])
+def analyze_sentiments():
+    print("🔹 Iniciando análisis de sentimientos...")
+
+    # Verificar si el archivo CSV existe
+    file_path = "transcriptions.csv"
+    if not os.path.exists(file_path):
+        print(f"❌ No se encontró el archivo: {file_path}")
+        return jsonify({'error': 'Archivo CSV no encontrado'}), 400
+
+    try:
+        print(f"📂 Leyendo archivo: {file_path}")
+        df = pd.read_csv(file_path)
+        print(f"✅ Archivo leído correctamente. Columnas: {df.columns.tolist()}")
+
+        # Verificar columna transcription
+        if "transcription" not in df.columns:
+            print("❌ La columna 'transcription' no existe en el CSV")
+            return jsonify({'error': "Columna 'transcription' no encontrada"}), 400
+
+        # Preprocesar texto
+        print("🔹 Preprocesando texto...")
+        df["transcription"] = df["transcription"].apply(
+            lambda x: fix_text(str(x)) if pd.notna(x) else x
+        )
+
+        # Aplicar modelo
+        print("🔹 Aplicando modelo de predicción...")
+        resultados = df["transcription"].apply(predecir_sentimiento)
+
+        # Revisar primeros resultados
+        print("🔍 Primeros resultados de predicción:")
+        for i, r in enumerate(resultados.head(5)):
+            print(f"   {i+1}: {r}")
+
+        df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
+        df["rank"] = resultados.apply(lambda x: x["rank"])
+
+        # Guardar CSV
+        output_path = "opiniones_con_sentimientos.csv"
+        df.to_csv(output_path, index=False, encoding='utf-8-sig')
+        print(f"✅ Resultados guardados en: {output_path}")
+
+        return jsonify(df.to_dict(orient='records')), 200
+
+    except Exception as e:
+        print(f"❌ Error en analyze_sentiments: {e}")
+        return jsonify({'error': str(e)}), 500
+    
+def predecir_sentimiento(texto):
+    if pd.isna(texto) or texto.strip() == "":
+        return {"label": "No disponible", "rank": None}
+    try:
+        resultado = classifier(texto)[0]  # resultado es un dict con 'label' y 'score'
+        etiqueta = resultado["label"]
+        return {
+            "label": traduccion_sentimientos.get(etiqueta, etiqueta),
+            "rank": rank_map.get(etiqueta)
+        }
+    except Exception as e:
+        print(f"Error con texto: {texto[:30]}... -> {e}")
+        return {"label": "Error", "rank": None}
+
 
 def transcribe_audio(audio_path):
     recognizer = sr.Recognizer()
@@ -200,12 +153,14 @@ def transcribe_audio(audio_path):
         except sr.RequestError as e:
             return f"Error en el servicio de reconocimiento: {e}"
 
+
 def save_transcription_to_csv(filename, transcription):
     df = pd.DataFrame([[filename, transcription]], columns=['filename', 'transcription'])
     if not os.path.isfile(TRANSCRIPTIONS_CSV):
         df.to_csv(TRANSCRIPTIONS_CSV, index=False)
     else:
         df.to_csv(TRANSCRIPTIONS_CSV, mode='a', header=False, index=False)
+
 
 @app.route('/save_transcription', methods=['POST'])
 def save_transcription():
@@ -215,6 +170,7 @@ def save_transcription():
         save_transcription_to_csv(filename, transcription)
         return jsonify({'message': 'Transcripción guardada exitosamente'}), 200
     return jsonify({'error': 'No se recibió transcripción'}), 400
+
 
 @app.route('/preprocessing_steps', methods=['GET'])
 def preprocessing_steps():
@@ -263,26 +219,14 @@ def preprocessing_steps():
         'tfidf': tfidf_df.to_dict(orient='records')
     })
 
+
 @app.route('/download_processed_csv', methods=['GET'])
 def download_processed_csv():
     if os.path.exists(PROCESSED_CSV):
         return send_file(PROCESSED_CSV, as_attachment=True)
     return jsonify({'error': 'Archivo procesado no encontrado'}), 404
 
-@app.route('/download_sentiments_csv', methods=['GET'])
-def download_sentiments_csv():
-    if os.path.exists(SENTIMENTS_CSV):
-        return send_file(SENTIMENTS_CSV, as_attachment=True)
-    return jsonify({'error': 'Archivo de sentimientos no encontrado'}), 404
-
-# NUEVO: Endpoint para verificar el estado del modelo
-@app.route('/model_status', methods=['GET'])
-def model_status():
-    return jsonify({
-        "model_loaded": classifier is not None,
-        "model_name": "nlptown/bert-base-multilingual-uncased-sentiment" if classifier else None
-    })
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port)
