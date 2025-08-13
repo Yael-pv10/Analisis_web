@@ -35,11 +35,9 @@ PROCESSED_CSV = 'processed_transcriptions.csv'
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
 traduccion_sentimientos = {
-    "1 star": "Muy negativo",
-    "2 stars": "Negativo",
-    "3 stars": "Neutral",
-    "4 stars": "Positivo",
-    "5 stars": "Muy positivo"
+    "1 stars": "Negativo",
+    "2 stars": "Neutral",
+    "3 stars": "Positivo",
 }
 
 # Opcional: asignar un rank numérico para orden o filtrado
@@ -47,8 +45,6 @@ rank_map = {
     "1 star": 1,
     "2 stars": 2,
     "3 stars": 3,
-    "4 stars": 4,
-    "5 stars": 5
 }
 
 
