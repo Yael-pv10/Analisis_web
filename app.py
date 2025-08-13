@@ -30,24 +30,31 @@ stop_words = set(stopwords.words('spanish'))
 app = Flask(__name__)
 CORS(app)
 
+# Variables globales
+tasks = {}  # Para tracking de tareas asíncronas
+
 AUDIO_DIR = 'audios'
 TRANSCRIPTIONS_CSV = 'transcriptions.csv'
 PROCESSED_CSV = 'processed_transcriptions.csv'
+SENTIMENTS_CSV = 'opiniones_con_sentimientos.csv'
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
 traduccion_sentimientos = {
-    "1 stars": "Negativo",
-    "2 stars": "Neutral",
-    "3 stars": "Positivo",
+    "1 star": "Muy negativo",
+    "2 stars": "Negativo", 
+    "3 stars": "Neutral",
+    "4 stars": "Positivo",
+    "5 stars": "Muy positivo"
 }
 
-# Opcional: asignar un rank numérico para orden o filtrado
+# Mapeo de ranking
 rank_map = {
     "1 star": 1,
     "2 stars": 2,
     "3 stars": 3,
+    "4 stars": 4,
+    "5 stars": 5
 }
-
 
 @app.route('/upload', methods=['POST'])
 def upload_audio():
@@ -84,13 +91,15 @@ def predecir_sentimiento(texto):
     try:
         resultado = classifier(texto)[0]
         etiqueta = resultado["label"]
+        confidence = resultado["score"]
         return {
             "label": traduccion_sentimientos.get(etiqueta, etiqueta),
-            "rank": rank_map.get(etiqueta)
+            "rank": rank_map.get(etiqueta, 0),
+            "confidence": confidence
         }
     except Exception as e:
         print(f"Error con texto: {texto[:30]}... -> {e}")
-        return {"label": "Error", "rank": None}
+        return {"label": "Error", "rank": None, "confidence": 0}
 
 def process_sentiment_task(task_id):
     """Ejecuta el análisis y guarda el resultado en tasks"""
@@ -105,16 +114,19 @@ def process_sentiment_task(task_id):
             tasks[task_id] = {"status": "error", "error": "Columna 'transcription' no encontrada"}
             return
 
+        # Limpiar texto
         df["transcription"] = df["transcription"].apply(
             lambda x: fix_text(str(x)) if pd.notna(x) else x
         )
 
+        # Aplicar análisis de sentimientos
         resultados = df["transcription"].apply(predecir_sentimiento)
         df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
         df["rank"] = resultados.apply(lambda x: x["rank"])
+        df["confidence"] = resultados.apply(lambda x: x["confidence"])
 
-        output_path = "opiniones_con_sentimientos.csv"
-        df.to_csv(output_path, index=False, encoding='utf-8-sig')
+        # Guardar archivo
+        df.to_csv(SENTIMENTS_CSV, index=False, encoding='utf-8-sig')
 
         tasks[task_id] = {"status": "completed", "result": df.to_dict(orient='records')}
 
@@ -137,6 +149,49 @@ def get_analysis(task_id):
     if not task:
         return jsonify({"error": "Tarea no encontrada"}), 404
     return jsonify(task), 200
+
+# NUEVO: Endpoint para analizar sentimientos directamente desde CSV existente
+@app.route('/analyze_sentiments', methods=['POST'])
+def analyze_sentiments():
+    try:
+        if not os.path.exists(TRANSCRIPTIONS_CSV):
+            return jsonify({"error": "No hay transcripciones disponibles"}), 404
+        
+        df = pd.read_csv(TRANSCRIPTIONS_CSV)
+        if "transcription" not in df.columns:
+            return jsonify({"error": "Columna 'transcription' no encontrada"}), 400
+        
+        # Limpiar texto
+        df["transcription"] = df["transcription"].apply(
+            lambda x: fix_text(str(x)) if pd.notna(x) else x
+        )
+        
+        # Aplicar análisis de sentimientos
+        resultados = df["transcription"].apply(predecir_sentimiento)
+        df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
+        df["rank"] = resultados.apply(lambda x: x["rank"])
+        df["confidence"] = resultados.apply(lambda x: x["confidence"])
+        
+        # Guardar archivo
+        df.to_csv(SENTIMENTS_CSV, index=False, encoding='utf-8-sig')
+        
+        return jsonify(df.to_dict(orient='records')), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# NUEVO: Endpoint para obtener datos ya analizados
+@app.route('/get_sentiment_data', methods=['GET'])
+def get_sentiment_data():
+    try:
+        if os.path.exists(SENTIMENTS_CSV):
+            df = pd.read_csv(SENTIMENTS_CSV)
+            return jsonify(df.to_dict(orient='records')), 200
+        else:
+            return jsonify([]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 def transcribe_audio(audio_path):
     recognizer = sr.Recognizer()
     with sr.AudioFile(audio_path) as source:
@@ -148,14 +203,12 @@ def transcribe_audio(audio_path):
         except sr.RequestError as e:
             return f"Error en el servicio de reconocimiento: {e}"
 
-
 def save_transcription_to_csv(filename, transcription):
     df = pd.DataFrame([[filename, transcription]], columns=['filename', 'transcription'])
     if not os.path.isfile(TRANSCRIPTIONS_CSV):
         df.to_csv(TRANSCRIPTIONS_CSV, index=False)
     else:
         df.to_csv(TRANSCRIPTIONS_CSV, mode='a', header=False, index=False)
-
 
 @app.route('/save_transcription', methods=['POST'])
 def save_transcription():
@@ -165,7 +218,6 @@ def save_transcription():
         save_transcription_to_csv(filename, transcription)
         return jsonify({'message': 'Transcripción guardada exitosamente'}), 200
     return jsonify({'error': 'No se recibió transcripción'}), 400
-
 
 @app.route('/preprocessing_steps', methods=['GET'])
 def preprocessing_steps():
@@ -214,13 +266,18 @@ def preprocessing_steps():
         'tfidf': tfidf_df.to_dict(orient='records')
     })
 
-
 @app.route('/download_processed_csv', methods=['GET'])
 def download_processed_csv():
     if os.path.exists(PROCESSED_CSV):
         return send_file(PROCESSED_CSV, as_attachment=True)
     return jsonify({'error': 'Archivo procesado no encontrado'}), 404
 
+# NUEVO: Endpoint para descargar CSV con sentimientos
+@app.route('/download_sentiments_csv', methods=['GET'])
+def download_sentiments_csv():
+    if os.path.exists(SENTIMENTS_CSV):
+        return send_file(SENTIMENTS_CSV, as_attachment=True)
+    return jsonify({'error': 'Archivo de sentimientos no encontrado'}), 404
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))

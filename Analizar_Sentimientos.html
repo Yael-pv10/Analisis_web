@@ -48,7 +48,9 @@
                 <div class="flex flex-col md:flex-row justify-between items-center">
                     <div class="flex items-center mb-4 md:mb-0">
                         <div class="w-12 h-12 mr-4 bg-white rounded-lg flex items-center justify-center">
-                            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/3b61d4d9-ebaa-47d7-b687-168ed320fb62.png" alt="Icono de análisis de sentimientos con forma de gráfico de barras y un emoticón sonriente en azul" />
+                            <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                            </svg>
                         </div>
                         <div>
                             <h1 class="text-2xl font-bold">Análisis de Sentimientos</h1>
@@ -56,11 +58,8 @@
                         </div>
                     </div>
                     <div class="flex items-center space-x-2">
-                        <button onclick="window.location.href='/'">
-                            <span class="px-4 py-2 bg-indigo-600 hover:bg-indigo-800 rounded-lg transition">Volver al Inicio</span>
-                        </button>
-                        <button onclick="exportToCSV()">
-                            <span class="px-4 py-2 bg-white text-indigo-700 hover:bg-gray-100 rounded-lg transition">Exportar CSV</span>
+                        <button onclick="exportToCSV()" class="px-4 py-2 bg-white text-indigo-700 hover:bg-gray-100 rounded-lg transition">
+                            Exportar CSV
                         </button>
                     </div>
                 </div>
@@ -69,29 +68,31 @@
 
         <!-- Main Content -->
         <main class="container mx-auto px-4 py-8">
-            <!-- Upload Section -->
+            <!-- Control Section -->
             <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
-                <h2 class="text-xl font-semibold text-gray-800 mb-4">Cargar nuevas opiniones</h2>
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Análisis de Transcripciones</h2>
                 <div class="flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4">
-                    <label for="fileInput" class="custom-file-upload">
-                        <span id="fileName">Seleccionar archivo CSV</span>
-                        <input id="fileInput" type="file" accept=".csv" />
-                    </label>
-                    <button id="uploadBtn" class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
-                        Analizar Sentimientos
+                    <button id="analyzeBtn" onclick="analyzeExistingData()" class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                        Analizar Transcripciones Existentes
+                    </button>
+                    <button id="loadDataBtn" onclick="loadExistingData()" class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                        Cargar Datos Ya Analizados
                     </button>
                     <div id="loadingIndicator" class="hidden loading px-4 py-2 bg-blue-100 text-blue-700 rounded-lg">
                         Procesando...
                     </div>
                 </div>
+                <div id="statusMessage" class="mt-4 text-sm text-gray-600"></div>
             </div>
 
             <!-- Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
                 <div class="sentiment-card bg-white rounded-xl shadow-lg p-6">
                     <div class="flex items-center">
-                        <div class="p-3 bg-green-100 rounded-lg mr-4">
-                            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/1b920b0f-b165-47f1-80af-2a0fcba56465.png" alt="Ícono de carita feliz en verde representando sentimientos positivos" />
+                        <div class="p-3 bg-blue-100 rounded-lg mr-4">
+                            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
                         </div>
                         <div>
                             <p class="text-gray-500">Total Opiniones</p>
@@ -101,34 +102,53 @@
                 </div>
                 <div class="sentiment-card bg-white rounded-xl shadow-lg p-6">
                     <div class="flex items-center">
-                        <div class="p-3 bg-yellow-100 rounded-lg mr-4">
-                            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/39c2238e-9fd6-4040-82a9-7264038b162a.png" alt="Ícono de carita neutral en amarillo" />
+                        <div class="p-3 bg-red-100 rounded-lg mr-4">
+                            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
                         </div>
                         <div>
-                            <p class="text-gray-500">Neutro</p>
+                            <p class="text-gray-500">Muy Negativo</p>
+                            <h3 id="veryNegativeCount" class="text-2xl font-bold">0</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="sentiment-card bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 bg-orange-100 rounded-lg mr-4">
+                            <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.182 16.318A4.486 4.486 0 0012.016 15a4.486 4.486 0 00-3.198 1.318M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-gray-500">Negativo</p>
+                            <h3 id="negativeCount" class="text-2xl font-bold">0</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="sentiment-card bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 bg-yellow-100 rounded-lg mr-4">
+                            <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-gray-500">Neutral</p>
                             <h3 id="neutralCount" class="text-2xl font-bold">0</h3>
                         </div>
                     </div>
                 </div>
                 <div class="sentiment-card bg-white rounded-xl shadow-lg p-6">
                     <div class="flex items-center">
-                        <div class="p-3 bg-blue-100 rounded-lg mr-4">
-                            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/5e9d86c1-0ea9-4ccc-ba40-d29330c2b258.png" alt="Ícono de carita positiva en azul" />
+                        <div class="p-3 bg-green-100 rounded-lg mr-4">
+                            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
                         </div>
                         <div>
                             <p class="text-gray-500">Positivo</p>
                             <h3 id="positiveCount" class="text-2xl font-bold">0</h3>
-                        </div>
-                    </div>
-                </div>
-                <div class="sentiment-card bg-white rounded-xl shadow-lg p-6">
-                    <div class="flex items-center">
-                        <div class="p-3 bg-red-100 rounded-lg mr-4">
-                            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/d712da95-b0b5-484d-972e-a80e4f7b4cee.png" alt="Ícono de carita triste en rojo representando sentimientos negativos" />
-                        </div>
-                        <div>
-                            <p class="text-gray-500">Negativo</p>
-                            <h3 id="negativeCount" class="text-2xl font-bold">0</h3>
                         </div>
                     </div>
                 </div>
@@ -148,31 +168,26 @@
                 </div>
             </div>
 
-            <!-- Word Cloud Section -->
-            <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
-                <h2 class="text-xl font-semibold text-gray-800 mb-4">Palabras Clave por Sentimiento</h2>
-                <div class="flex flex-wrap gap-2" id="wordCloud">
-                    <!-- Words will be added here by JavaScript -->
-                </div>
-            </div>
-
             <!-- Recent Opinions Table -->
             <div class="bg-white rounded-xl shadow-lg p-6 overflow-x-auto">
-                <h2 class="text-xl font-semibold text-gray-800 mb-4">Opiniones Recientes</h2>
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Texto</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sentimiento</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Puntuación</th>
-                        </tr>
-                    </thead>
-                    <tbody id="opinionsTableBody" class="bg-white divide-y divide-gray-200">
-                        <!-- Table rows will be added here by JavaScript -->
-                    </tbody>
-                </table>
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Opiniones Analizadas</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transcripción</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sentimiento</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confianza</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ranking</th>
+                            </tr>
+                        </thead>
+                        <tbody id="opinionsTableBody" class="bg-white divide-y divide-gray-200">
+                            <!-- Table rows will be added here by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
                 <div class="mt-4 flex justify-center">
-                    <button id="loadMore" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700">
+                    <button id="loadMore" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700" onclick="loadMoreOpinions()">
                         Cargar más...
                     </button>
                 </div>
@@ -182,7 +197,7 @@
         <!-- Footer -->
         <footer class="bg-gray-800 text-white py-6">
             <div class="container mx-auto px-4 text-center">
-                <p>Sistema de Análisis de Sentimientos - © 2023</p>
+                <p>Sistema de Análisis de Sentimientos - © 2024</p>
             </div>
         </footer>
     </div>
@@ -191,12 +206,7 @@
         // Global variables
         let currentData = [];
         let displayedCount = 10;
-
-        // DOM Elements
-        const fileInput = document.getElementById('fileInput');
-        const fileName = document.getElementById('fileName');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const loadingIndicator = document.getElementById('loadingIndicator');
+        const API_BASE = 'https://audio-preprocessing-api-production.up.railway.app';
 
         // Initialize charts
         let sentimentPieChart;
@@ -214,24 +224,8 @@
         // Initialize page
         document.addEventListener('DOMContentLoaded', () => {
             initCharts();
-            loadData();
-            setupEventListeners();
+            loadExistingData(); // Cargar datos existentes al inicio
         });
-
-        function setupEventListeners() {
-            // File input change
-            fileInput.addEventListener('change', (e) => {
-                if (e.target.files.length > 0) {
-                    fileName.textContent = e.target.files[0].name;
-                }
-            });
-
-            // Upload button click
-            uploadBtn.addEventListener('click', uploadFile);
-
-            // Load more button
-            document.getElementById('loadMore').addEventListener('click', loadMoreOpinions);
-        }
 
         function initCharts() {
             const pieCtx = document.getElementById('sentimentPieChart').getContext('2d');
@@ -267,7 +261,7 @@
                 data: {
                     labels: ['Muy negativo', 'Negativo', 'Neutral', 'Positivo', 'Muy positivo'],
                     datasets: [{
-                        label: 'Distribución',
+                        label: 'Cantidad',
                         data: [0, 0, 0, 0, 0],
                         backgroundColor: [
                             sentimentColors['Muy negativo'],
@@ -290,233 +284,172 @@
             });
         }
 
-        function loadData() {
-            axios.post('https://audio-preprocessing-api-production.up.railway.app/analyze_sentiments')
+        // Función para analizar transcripciones existentes
+        function analyzeExistingData() {
+            setLoading(true);
+            setStatus('Iniciando análisis de sentimientos...');
+
+            axios.post(`${API_BASE}/analyze_sentiments`)
                 .then(response => {
-                    const data = response.data;
-                    if (data.length > 0) {
-                        updateDashboard(data);
+                    currentData = response.data;
+                    updateDashboard(currentData);
+                    setStatus(`Análisis completado. ${currentData.length} transcripciones analizadas ✅`);
+                    setLoading(false);
+                })
+                .catch(error => {
+                    console.error('Error al analizar sentimientos:', error);
+                    setStatus('Error al analizar las transcripciones: ' + (error.response?.data?.error || error.message));
+                    setLoading(false);
+                });
+        }
+
+        // Función para cargar datos ya analizados
+        function loadExistingData() {
+            setLoading(true);
+            setStatus('Cargando datos existentes...');
+
+            axios.get(`${API_BASE}/get_sentiment_data`)
+                .then(response => {
+                    currentData = response.data;
+                    if (currentData.length > 0) {
+                        updateDashboard(currentData);
+                        setStatus(`Datos cargados: ${currentData.length} transcripciones con análisis ✅`);
                     } else {
-                        console.error('No se encontraron datos para analizar.');
+                        setStatus('No hay datos analizados disponibles. Use "Analizar Transcripciones Existentes" primero.');
                     }
+                    setLoading(false);
                 })
                 .catch(error => {
                     console.error('Error al cargar datos:', error);
+                    setStatus('Error al cargar datos existentes: ' + (error.response?.data?.error || error.message));
+                    setLoading(false);
                 });
         }
 
-        function fetchCSVData() {
-            axios.post('https://audio-preprocessing-api-production.up.railway.app/download_processed_csv', { responseType: 'text' })
-                .then(response => {
-                    const rows = response.data.split('\n');
-                    const headers = rows[0].split(',');
-                    
-                    currentData = [];
-                    for (let i = 1; i < rows.length; i++) {
-                        const values = rows[i].split(',');
-                        if (values.length === headers.length) {
-                            const row = {};
-                            headers.forEach((header, index) => {
-                                row[header.trim()] = values[index] ? values[index].trim() : '';
-                            });
-                            currentData.push(row);
-                        }
-                    }
-
-                    if (currentData.length > 0) {
-                        updateDashboard(currentData);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error al obtener datos CSV:', error);
-                });
+        function setLoading(isLoading) {
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const loadDataBtn = document.getElementById('loadDataBtn');
+            
+            if (isLoading) {
+                loadingIndicator.classList.remove('hidden');
+                analyzeBtn.disabled = true;
+                loadDataBtn.disabled = true;
+            } else {
+                loadingIndicator.classList.add('hidden');
+                analyzeBtn.disabled = false;
+                loadDataBtn.disabled = false;
+            }
         }
 
-        function uploadFile() {
-    if (!fileInput.files || fileInput.files.length === 0) {
-        alert('Por favor selecciona un archivo primero');
-        return;
-    }
-
-    loadingIndicator.classList.remove('hidden');
-    uploadBtn.disabled = true;
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
-    // 1️⃣ Iniciar análisis y obtener task_id
-    axios.post('https://audio-preprocessing-api-production.up.railway.app/start_analysis', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    .then(response => {
-        const taskId = response.data.task_id;
-        console.log("Tarea iniciada:", taskId);
-        document.getElementById('statusMessage').innerText = "Procesando análisis...";
-
-        // 2️⃣ Empezar a consultar resultados
-        pollAnalysisResult(taskId);
-    })
-    .catch(error => {
-        console.error('Error al iniciar análisis:', error);
-        alert('Error al procesar el archivo');
-        loadingIndicator.classList.add('hidden');
-        uploadBtn.disabled = false;
-    });
-}
-
-// 3️⃣ Polling para revisar si ya terminó
-function pollAnalysisResult(taskId) {
-    const intervalId = setInterval(() => {
-        axios.get(`https://audio-preprocessing-api-production.up.railway.app/get_analysis/${taskId}`)
-        .then(res => {
-            if (res.data.status === "completed") {
-                clearInterval(intervalId);
-
-                console.log("Análisis completado:", res.data.result);
-                currentData = res.data.result; // Guardar datos globalmente
-                updateDashboard(currentData);
-
-                document.getElementById('statusMessage').innerText = "Análisis completado ✅";
-                loadingIndicator.classList.add('hidden');
-                uploadBtn.disabled = false;
-            }
-            else if (res.data.status === "error") {
-                clearInterval(intervalId);
-                console.error("Error en análisis:", res.data.error);
-                document.getElementById('statusMessage').innerText = "Error: " + res.data.error;
-                loadingIndicator.classList.add('hidden');
-                uploadBtn.disabled = false;
-            }
-            else {
-                console.log("En proceso...");
-                document.getElementById('statusMessage').innerText = "Analizando sentimientos...";
-            }
-        })
-        .catch(err => {
-            clearInterval(intervalId);
-            console.error("Error consultando estado:", err);
-            document.getElementById('statusMessage').innerText = "Error consultando el análisis.";
-            loadingIndicator.classList.add('hidden');
-            uploadBtn.disabled = false;
-        });
-    }, 3000); // cada 3s
-}
-
+        function setStatus(message) {
+            document.getElementById('statusMessage').textContent = message;
+        }
 
         function updateDashboard(data) {
-    // Actualizar estadísticas
-    document.getElementById('totalOpinions').textContent = data.length;
+            if (!data || data.length === 0) {
+                console.log('No hay datos para mostrar');
+                return;
+            }
 
-    const sentimentCounts = {
-        'Muy negativo': 0,
-        'Negativo': 0,
-        'Neutral': 0,
-        'Positivo': 0,
-        'Muy positivo': 0
-    };
+            // Actualizar estadísticas
+            document.getElementById('totalOpinions').textContent = data.length;
 
-    data.forEach(item => {
-        if (item.sentimiento_predicho in sentimentCounts) {
-            sentimentCounts[item.sentimiento_predicho]++;
-        }
-    });
+            const sentimentCounts = {
+                'Muy negativo': 0,
+                'Negativo': 0,
+                'Neutral': 0,
+                'Positivo': 0,
+                'Muy positivo': 0
+            };
 
-    document.getElementById('neutralCount').textContent = sentimentCounts['Neutral'];
-    document.getElementById('positiveCount').textContent = sentimentCounts['Positivo'] + sentimentCounts['Muy positivo'];
-    document.getElementById('negativeCount').textContent = sentimentCounts['Negativo'] + sentimentCounts['Muy negativo'];
+            data.forEach(item => {
+                const sentiment = item.sentimiento_predicho;
+                if (sentiment && sentiment in sentimentCounts) {
+                    sentimentCounts[sentiment]++;
+                }
+            });
 
-    // Actualizar gráficos
-    sentimentPieChart.data.datasets[0].data = [
-        sentimentCounts['Muy negativo'],
-        sentimentCounts['Negativo'],
-        sentimentCounts['Neutral'],
-        sentimentCounts['Positivo'],
-        sentimentCounts['Muy positivo']
-    ];
-    sentimentPieChart.update();
+            // Actualizar contadores individuales
+            document.getElementById('veryNegativeCount').textContent = sentimentCounts['Muy negativo'];
+            document.getElementById('negativeCount').textContent = sentimentCounts['Negativo'];
+            document.getElementById('neutralCount').textContent = sentimentCounts['Neutral'];
+            document.getElementById('positiveCount').textContent = sentimentCounts['Positivo'];
 
-    sentimentBarChart.data.datasets[0].data = [
-        sentimentCounts['Muy negativo'],
-        sentimentCounts['Negativo'],
-        sentimentCounts['Neutral'],
-        sentimentCounts['Positivo'],
-        sentimentCounts['Muy positivo']
-    ];
-    sentimentBarChart.update();
-
-    // Actualizar nube de palabras y tabla
-    updateWordCloud(data);
-    updateOpinionsTable(data);
-}
-
-        function updateWordCloud(data) {
-            const wordCloud = document.getElementById('wordCloud');
-            wordCloud.innerHTML = '';
-
-            // Simple example - in a real app you'd perform proper text analysis
-            const sampleWords = [
-                { text: 'excelente', sentiment: 'Muy positivo', size: 24 },
-                { text: 'bueno', sentiment: 'Positivo', size: 18 },
-                { text: 'normal', sentiment: 'Neutral', size: 16 },
-                { text: 'malo', sentiment: 'Negativo', size: 18 },
-                { text: 'terrible', sentiment: 'Muy negativo', size: 24 },
-                { text: 'satisfecho', sentiment: 'Positivo', size: 16 },
-                { text: 'insatisfecho', sentiment: 'Negativo', size: 16 }
+            // Actualizar gráficos
+            const chartData = [
+                sentimentCounts['Muy negativo'],
+                sentimentCounts['Negativo'],
+                sentimentCounts['Neutral'],
+                sentimentCounts['Positivo'],
+                sentimentCounts['Muy positivo']
             ];
 
-            sampleWords.forEach(word => {
-                const span = document.createElement('span');
-                span.className = `px-3 py-1 rounded-full text-white bg-${getColorClass(word.sentiment)}`;
-                span.style.fontSize = `${word.size}px`;
-                span.textContent = word.text;
-                wordCloud.appendChild(span);
-            });
-        }
+            sentimentPieChart.data.datasets[0].data = chartData;
+            sentimentPieChart.update();
 
-        function getColorClass(sentiment) {
-            switch(sentiment) {
-                case 'Muy positivo': return 'emerald-500';
-                case 'Positivo': return 'blue-500';
-                case 'Neutral': return 'yellow-500';
-                case 'Negativo': return 'orange-500';
-                case 'Muy negativo': return 'red-500';
-                default: return 'gray-500';
-            }
+            sentimentBarChart.data.datasets[0].data = chartData;
+            sentimentBarChart.update();
+
+            // Actualizar tabla
+            displayedCount = 10; // Reset displayed count
+            updateOpinionsTable(data);
         }
 
         function updateOpinionsTable(data) {
             const tableBody = document.getElementById('opinionsTableBody');
             tableBody.innerHTML = '';
 
-            data.forEach(item => {
+            const itemsToShow = Math.min(displayedCount, data.length);
+            
+            for (let i = 0; i < itemsToShow; i++) {
+                const item = data[i];
                 const row = document.createElement('tr');
                 
-                // Trim text if too long
-                let text = item.transcription || item.opinion || ''; // Asegúrate de que la columna correcta se use
+                // Obtener texto de transcripción
+                let text = item.transcription || '';
                 if (text.length > 100) {
                     text = text.substring(0, 100) + '...';
                 }
                 
+                // Obtener sentimiento
+                const sentiment = item.sentimiento_predicho || 'Sin análisis';
+                
+                // Obtener confianza
+                const confidence = item.confidence ? (item.confidence * 100).toFixed(1) + '%' : 'N/A';
+                
+                // Obtener ranking
+                const rank = item.rank || 'N/A';
+                
                 row.innerHTML = `
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm text-gray-900">${text}</div>
+                    <td class="px-6 py-4">
+                        <div class="text-sm text-gray-900 max-w-xs">${text}</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="px-2 py-1 text-xs rounded-full ${getTextColorClass(item.sentimiento_predicho)}">
-                            ${item.sentimiento_predicho || 'Sin análisis'}
+                        <span class="px-2 py-1 text-xs rounded-full ${getSentimentColorClass(sentiment)}">
+                            ${sentiment}
                         </span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        ${item.rank || 'N/A'}
+                        ${confidence}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${rank}
                     </td>
                 `;
                 tableBody.appendChild(row);
-            });
+            }
+
+            // Mostrar/ocultar botón "Cargar más"
+            const loadMoreBtn = document.getElementById('loadMore');
+            if (displayedCount >= data.length) {
+                loadMoreBtn.style.display = 'none';
+            } else {
+                loadMoreBtn.style.display = 'block';
+            }
         }
 
-
-
-        function getTextColorClass(sentiment) {
+        function getSentimentColorClass(sentiment) {
             switch(sentiment) {
                 case 'Muy positivo': return 'bg-emerald-100 text-emerald-800';
                 case 'Positivo': return 'bg-blue-100 text-blue-800';
@@ -530,10 +463,6 @@ function pollAnalysisResult(taskId) {
         function loadMoreOpinions() {
             displayedCount += 10;
             updateOpinionsTable(currentData);
-            
-            if (displayedCount >= currentData.length) {
-                document.getElementById('loadMore').style.display = 'none';
-            }
         }
 
         function exportToCSV() {
@@ -542,28 +471,49 @@ function pollAnalysisResult(taskId) {
                 return;
             }
 
-            // Convert data to CSV
-            const headers = Object.keys(currentData[0]);
-            let csv = headers.join(',') + '\n';
+            // Descargar CSV desde el servidor
+            window.open(`${API_BASE}/download_sentiments_csv`, '_blank');
+        }
+
+        // Función adicional para mostrar estadísticas detalladas
+        function showDetailedStats() {
+            if (currentData.length === 0) return;
+
+            const stats = calculateDetailedStats(currentData);
+            console.log('Estadísticas detalladas:', stats);
+        }
+
+        function calculateDetailedStats(data) {
+            const stats = {
+                total: data.length,
+                sentiments: {},
+                avgConfidence: 0,
+                confidenceBysentiment: {}
+            };
+
+            let totalConfidence = 0;
             
-            currentData.forEach(row => {
-                const values = headers.map(header => {
-                    const value = row[header] || '';
-                    return `"${value.toString().replace(/"/g, '""')}"`;
-                });
-                csv += values.join(',') + '\n';
+            data.forEach(item => {
+                const sentiment = item.sentimiento_predicho;
+                const confidence = item.confidence || 0;
+                
+                // Contar sentimientos
+                stats.sentiments[sentiment] = (stats.sentiments[sentiment] || 0) + 1;
+                
+                // Sumar confianza
+                totalConfidence += confidence;
+                
+                // Confianza por sentimiento
+                if (!stats.confidenceBysentiment[sentiment]) {
+                    stats.confidenceBysentiment[sentiment] = [];
+                }
+                stats.confidenceBysentiment[sentiment].push(confidence);
             });
 
-            // Create download link
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', 'analisis_sentimientos.csv');
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            // Calcular promedio de confianza
+            stats.avgConfidence = totalConfidence / data.length;
+
+            return stats;
         }
     </script>
 </body>
