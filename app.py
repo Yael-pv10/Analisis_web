@@ -7,6 +7,7 @@ from pydub import AudioSegment
 import uuid
 from ftfy import fix_text
 from transformers import pipeline
+import threading
 
 classifier = pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
 
@@ -77,60 +78,11 @@ def upload_audio():
 
     return jsonify({'transcription': transcription}), 200
 
-@app.route('/analyze_sentiments', methods=['POST'])
-def analyze_sentiments():
-    print("🔹 Iniciando análisis de sentimientos...")
-
-    # Verificar si el archivo CSV existe
-    file_path = "transcriptions.csv"
-    if not os.path.exists(file_path):
-        print(f"❌ No se encontró el archivo: {file_path}")
-        return jsonify({'error': 'Archivo CSV no encontrado'}), 400
-
-    try:
-        print(f"📂 Leyendo archivo: {file_path}")
-        df = pd.read_csv(file_path)
-        print(f"✅ Archivo leído correctamente. Columnas: {df.columns.tolist()}")
-
-        # Verificar columna transcription
-        if "transcription" not in df.columns:
-            print("❌ La columna 'transcription' no existe en el CSV")
-            return jsonify({'error': "Columna 'transcription' no encontrada"}), 400
-
-        # Preprocesar texto
-        print("🔹 Preprocesando texto...")
-        df["transcription"] = df["transcription"].apply(
-            lambda x: fix_text(str(x)) if pd.notna(x) else x
-        )
-
-        # Aplicar modelo
-        print("🔹 Aplicando modelo de predicción...")
-        resultados = df["transcription"].apply(predecir_sentimiento)
-
-        # Revisar primeros resultados
-        print("🔍 Primeros resultados de predicción:")
-        for i, r in enumerate(resultados.head(5)):
-            print(f"   {i+1}: {r}")
-
-        df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
-        df["rank"] = resultados.apply(lambda x: x["rank"])
-
-        # Guardar CSV
-        output_path = "opiniones_con_sentimientos.csv"
-        df.to_csv(output_path, index=False, encoding='utf-8-sig')
-        print(f"✅ Resultados guardados en: {output_path}")
-
-        return jsonify(df.to_dict(orient='records')), 200
-
-    except Exception as e:
-        print(f"❌ Error en analyze_sentiments: {e}")
-        return jsonify({'error': str(e)}), 500
-    
 def predecir_sentimiento(texto):
     if pd.isna(texto) or texto.strip() == "":
         return {"label": "No disponible", "rank": None}
     try:
-        resultado = classifier(texto)[0]  # resultado es un dict con 'label' y 'score'
+        resultado = classifier(texto)[0]
         etiqueta = resultado["label"]
         return {
             "label": traduccion_sentimientos.get(etiqueta, etiqueta),
@@ -140,7 +92,51 @@ def predecir_sentimiento(texto):
         print(f"Error con texto: {texto[:30]}... -> {e}")
         return {"label": "Error", "rank": None}
 
+def process_sentiment_task(task_id):
+    """Ejecuta el análisis y guarda el resultado en tasks"""
+    try:
+        file_path = TRANSCRIPTIONS_CSV
+        if not os.path.exists(file_path):
+            tasks[task_id] = {"status": "error", "error": "Archivo CSV no encontrado"}
+            return
 
+        df = pd.read_csv(file_path)
+        if "transcription" not in df.columns:
+            tasks[task_id] = {"status": "error", "error": "Columna 'transcription' no encontrada"}
+            return
+
+        df["transcription"] = df["transcription"].apply(
+            lambda x: fix_text(str(x)) if pd.notna(x) else x
+        )
+
+        resultados = df["transcription"].apply(predecir_sentimiento)
+        df["sentimiento_predicho"] = resultados.apply(lambda x: x["label"])
+        df["rank"] = resultados.apply(lambda x: x["rank"])
+
+        output_path = "opiniones_con_sentimientos.csv"
+        df.to_csv(output_path, index=False, encoding='utf-8-sig')
+
+        tasks[task_id] = {"status": "completed", "result": df.to_dict(orient='records')}
+
+    except Exception as e:
+        tasks[task_id] = {"status": "error", "error": str(e)}
+
+@app.route('/start_analysis', methods=['POST'])
+def start_analysis():
+    task_id = str(uuid.uuid4())
+    tasks[task_id] = {"status": "processing"}
+
+    # Lanza análisis en segundo plano
+    threading.Thread(target=process_sentiment_task, args=(task_id,)).start()
+
+    return jsonify({"task_id": task_id}), 200
+
+@app.route('/get_analysis/<task_id>', methods=['GET'])
+def get_analysis(task_id):
+    task = tasks.get(task_id)
+    if not task:
+        return jsonify({"error": "Tarea no encontrada"}), 404
+    return jsonify(task), 200
 def transcribe_audio(audio_path):
     recognizer = sr.Recognizer()
     with sr.AudioFile(audio_path) as source:

@@ -333,39 +333,74 @@
         }
 
         function uploadFile() {
-            if (!fileInput.files || fileInput.files.length === 0) {
-                alert('Por favor selecciona un archivo primero');
-                return;
-            }
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert('Por favor selecciona un archivo primero');
+        return;
+    }
 
-            loadingIndicator.classList.remove('hidden');
-            uploadBtn.disabled = true;
+    loadingIndicator.classList.remove('hidden');
+    uploadBtn.disabled = true;
 
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
 
-            // Cambiar la URL del endpoint a '/analyze_sentiments'
-            axios.post('https://audio-preprocessing-api-production.up.railway.app/analyze_sentiments', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data'
-                }
-            })
-            .then(response => {
-                // Aquí puedes manejar la respuesta y actualizar el dashboard
-                const data = response.data;
-                updateDashboard(data); // Asegúrate de que esta función maneje los datos correctamente
-                fileName.textContent = 'Seleccionar archivo CSV';
-                fileInput.value = '';
-            })
-            .catch(error => {
-                console.error('Error al subir archivo:', error);
-                alert('Error al procesar el archivo');
-            })
-            .finally(() => {
+    // 1️⃣ Iniciar análisis y obtener task_id
+    axios.post('https://audio-preprocessing-api-production.up.railway.app/start_analysis', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    .then(response => {
+        const taskId = response.data.task_id;
+        console.log("Tarea iniciada:", taskId);
+        document.getElementById('statusMessage').innerText = "Procesando análisis...";
+
+        // 2️⃣ Empezar a consultar resultados
+        pollAnalysisResult(taskId);
+    })
+    .catch(error => {
+        console.error('Error al iniciar análisis:', error);
+        alert('Error al procesar el archivo');
+        loadingIndicator.classList.add('hidden');
+        uploadBtn.disabled = false;
+    });
+}
+
+// 3️⃣ Polling para revisar si ya terminó
+function pollAnalysisResult(taskId) {
+    const intervalId = setInterval(() => {
+        axios.get(`https://audio-preprocessing-api-production.up.railway.app/get_analysis/${taskId}`)
+        .then(res => {
+            if (res.data.status === "completed") {
+                clearInterval(intervalId);
+
+                console.log("Análisis completado:", res.data.result);
+                currentData = res.data.result; // Guardar datos globalmente
+                updateDashboard(currentData);
+
+                document.getElementById('statusMessage').innerText = "Análisis completado ✅";
                 loadingIndicator.classList.add('hidden');
                 uploadBtn.disabled = false;
-            });
-        }
+            }
+            else if (res.data.status === "error") {
+                clearInterval(intervalId);
+                console.error("Error en análisis:", res.data.error);
+                document.getElementById('statusMessage').innerText = "Error: " + res.data.error;
+                loadingIndicator.classList.add('hidden');
+                uploadBtn.disabled = false;
+            }
+            else {
+                console.log("En proceso...");
+                document.getElementById('statusMessage').innerText = "Analizando sentimientos...";
+            }
+        })
+        .catch(err => {
+            clearInterval(intervalId);
+            console.error("Error consultando estado:", err);
+            document.getElementById('statusMessage').innerText = "Error consultando el análisis.";
+            loadingIndicator.classList.add('hidden');
+            uploadBtn.disabled = false;
+        });
+    }, 3000); // cada 3s
+}
 
 
         function updateDashboard(data) {
