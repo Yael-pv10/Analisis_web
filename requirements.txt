@@ -11,3 +11,6 @@ es-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/es
 Flask-Dance
 transformers
 ftfy
+vaderSentiment==3.3.2
+numpy==1.24.3
+gunicorn==21.2.0
