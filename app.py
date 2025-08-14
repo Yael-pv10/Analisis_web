@@ -11,6 +11,18 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
+import seaborn as sns
+import io
+import base64
+import json
+
+# Agregar estas funciones al archivo app.py
 
 # Importar modelo más rápido
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -62,6 +74,271 @@ stop_words_spanish = set([
 # Cache para resultados
 sentiment_cache = {}
 cache_lock = threading.Lock()
+
+
+
+def preprocess_for_ml(df):
+    """Preprocesar datos para machine learning"""
+    # Filtrar solo las filas que tienen sentimiento procesado
+    df_processed = df[
+        (df['sentimiento_predicho'].notna()) & 
+        (df['sentimiento_predicho'] != 'Sin procesar') &
+        (df['sentimiento_predicdo'] != '') &
+        (df['transcription'].notna()) &
+        (df['transcription'] != '')
+    ].copy()
+    
+    # Limpiar textos
+    df_processed['text_clean'] = df_processed['transcription'].apply(preprocess_text_fast)
+    
+    # Filtrar textos vacíos después del preprocesamiento
+    df_processed = df_processed[df_processed['text_clean'].str.len() > 5]
+    
+    return df_processed
+
+def create_confusion_matrix_plot(y_true, y_pred, labels):
+    """Crear matriz de confusión como imagen base64"""
+    plt.figure(figsize=(8, 6))
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+    
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=labels, yticklabels=labels)
+    plt.title('Matriz de Confusión')
+    plt.ylabel('Valores Reales')
+    plt.xlabel('Predicciones')
+    
+    # Convertir a base64
+    img_buffer = io.BytesIO()
+    plt.savefig(img_buffer, format='png', bbox_inches='tight', dpi=150)
+    img_buffer.seek(0)
+    img_str = base64.b64encode(img_buffer.getvalue()).decode()
+    plt.close()
+    
+    return img_str
+
+@app.route('/train_model', methods=['POST'])
+def train_model():
+    """Entrenar modelo de clasificación con Hold-out"""
+    try:
+        # Verificar que existe el archivo
+        if not os.path.exists(TRANSCRIPTIONS_CSV):
+            return jsonify({'error': 'Archivo transcriptions.csv no encontrado'}), 400
+        
+        # Cargar datos
+        df = pd.read_csv(TRANSCRIPTIONS_CSV)
+        
+        # Verificar que hay datos con sentimientos
+        if 'sentimiento_predicho' not in df.columns:
+            return jsonify({'error': 'No hay datos de sentimiento. Ejecuta el análisis primero.'}), 400
+        
+        # Preprocesar datos
+        df_processed = preprocess_for_ml(df)
+        
+        if len(df_processed) < 10:
+            return jsonify({'error': f'Datos insuficientes para entrenamiento. Solo {len(df_processed)} registros válidos.'}), 400
+        
+        # Preparar características y etiquetas
+        X = df_processed['text_clean'].values
+        y = df_processed['sentimiento_predicho'].values
+        
+        # Vectorización TF-IDF
+        vectorizer = TfidfVectorizer(
+            max_features=1000,
+            stop_words=list(stop_words_spanish),
+            ngram_range=(1, 2),
+            min_df=2
+        )
+        
+        X_tfidf = vectorizer.fit_transform(X)
+        
+        # Codificar etiquetas
+        label_encoder = LabelEncoder()
+        y_encoded = label_encoder.fit_transform(y)
+        
+        # División Hold-out (80% entrenamiento, 20% prueba)
+        test_size = float(request.json.get('test_size', 0.2))
+        random_state = int(request.json.get('random_state', 42))
+        
+        X_train, X_test, y_train, y_test = train_test_split(
+            X_tfidf, y_encoded, 
+            test_size=test_size, 
+            random_state=random_state,
+            stratify=y_encoded
+        )
+        
+        # Entrenar modelo de Regresión Logística
+        model = LogisticRegression(
+            random_state=random_state,
+            max_iter=1000,
+            class_weight='balanced'
+        )
+        
+        model.fit(X_train, y_train)
+        
+        # Predicciones
+        y_pred_train = model.predict(X_train)
+        y_pred_test = model.predict(X_test)
+        
+        # Métricas de desempeño
+        train_accuracy = accuracy_score(y_train, y_pred_train)
+        test_accuracy = accuracy_score(y_test, y_pred_test)
+        
+        # Reporte de clasificación
+        class_names = label_encoder.classes_
+        classification_rep = classification_report(
+            y_test, y_pred_test, 
+            target_names=class_names,
+            output_dict=True
+        )
+        
+        # Matriz de confusión
+        confusion_img = create_confusion_matrix_plot(
+            label_encoder.inverse_transform(y_test),
+            label_encoder.inverse_transform(y_pred_test),
+            class_names
+        )
+        
+        # Distribución de clases
+        class_distribution = pd.Series(y).value_counts().to_dict()
+        
+        # Características más importantes (coeficientes del modelo)
+        feature_names = vectorizer.get_feature_names_out()
+        top_features = {}
+        
+        for i, class_name in enumerate(class_names):
+            if len(class_names) == 2:
+                # Clasificación binaria
+                coefficients = model.coef_[0] if i == 1 else -model.coef_[0]
+            else:
+                # Clasificación multiclase
+                coefficients = model.coef_[i]
+            
+            top_indices = coefficients.argsort()[-10:][::-1]
+            top_features[class_name] = [
+                {
+                    'feature': feature_names[idx],
+                    'coefficient': float(coefficients[idx])
+                }
+                for idx in top_indices
+            ]
+        
+        # Guardar resultados del modelo
+        model_results = {
+            'model_type': 'Logistic Regression',
+            'train_size': len(X_train),
+            'test_size': len(X_test),
+            'total_features': X_tfidf.shape[1],
+            'train_accuracy': float(train_accuracy),
+            'test_accuracy': float(test_accuracy),
+            'class_distribution': class_distribution,
+            'classification_report': classification_rep,
+            'confusion_matrix_img': confusion_img,
+            'top_features': top_features,
+            'classes': list(class_names),
+            'test_split_ratio': test_size,
+            'random_state': random_state
+        }
+        
+        # Guardar en archivo JSON para persistencia
+        with open('model_results.json', 'w', encoding='utf-8') as f:
+            # Crear una copia sin la imagen para el JSON
+            json_results = model_results.copy()
+            json_results.pop('confusion_matrix_img', None)
+            json.dump(json_results, f, ensure_ascii=False, indent=2)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Modelo entrenado exitosamente',
+            'results': model_results
+        }), 200
+        
+    except Exception as e:
+        print(f"Error en entrenamiento: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get_model_results', methods=['GET'])
+def get_model_results():
+    """Obtener resultados del último modelo entrenado"""
+    try:
+        # Intentar cargar desde archivo JSON
+        if os.path.exists('model_results.json'):
+            with open('model_results.json', 'r', encoding='utf-8') as f:
+                results = json.load(f)
+            
+            # Regenerar matriz de confusión si es necesario
+            if 'confusion_matrix_img' not in results:
+                results['confusion_matrix_img'] = None
+            
+            return jsonify({
+                'success': True,
+                'results': results
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No hay resultados de modelo disponibles. Entrena un modelo primero.'
+            }), 404
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/predict_sentiment', methods=['POST'])
+def predict_sentiment_ml():
+    """Realizar predicción con el modelo entrenado"""
+    try:
+        text = request.json.get('text', '')
+        if not text:
+            return jsonify({'error': 'No se proporcionó texto'}), 400
+        
+        # Cargar resultados del modelo (en un caso real, cargarías el modelo serializado)
+        if not os.path.exists('model_results.json'):
+            return jsonify({'error': 'No hay modelo entrenado disponible'}), 400
+        
+        # Por ahora, usar VADER como backup
+        result = analyze_sentiment_vader(text)
+        
+        return jsonify({
+            'text': text,
+            'prediction': result['label'],
+            'confidence': result['score'],
+            'method': 'VADER (ML model not persisted)'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/model_statistics', methods=['GET'])
+def model_statistics():
+    """Obtener estadísticas del dataset para ML"""
+    try:
+        if not os.path.exists(TRANSCRIPTIONS_CSV):
+            return jsonify({'error': 'Archivo no encontrado'}), 404
+        
+        df = pd.read_csv(TRANSCRIPTIONS_CSV)
+        
+        # Estadísticas generales
+        stats = {
+            'total_records': len(df),
+            'columns': list(df.columns)
+        }
+        
+        # Si tiene datos de sentimiento
+        if 'sentimiento_predicho' in df.columns:
+            df_processed = preprocess_for_ml(df)
+            
+            stats.update({
+                'processed_records': len(df_processed),
+                'sentiment_distribution': df_processed['sentimiento_predicho'].value_counts().to_dict(),
+                'avg_text_length': float(df_processed['transcription'].str.len().mean()),
+                'min_text_length': int(df_processed['transcription'].str.len().min()),
+                'max_text_length': int(df_processed['transcription'].str.len().max()),
+                'ready_for_ml': len(df_processed) >= 10
+            })
+        
+        return jsonify(stats), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/upload', methods=['POST'])
 def upload_audio():
@@ -502,6 +779,60 @@ def download_processed_csv():
     if os.path.exists(output_file):
         return send_file(output_file, as_attachment=True)
     return jsonify({'error': 'Archivo procesado no encontrado'}), 404
+
+# Agregar este endpoint adicional al final de app.py
+
+@app.route('/clear_cache', methods=['POST'])
+def clear_cache():
+    """Limpiar cache de sentimientos"""
+    global sentiment_cache
+    with cache_lock:
+        cache_size = len(sentiment_cache)
+        sentiment_cache.clear()
+    
+    return jsonify({
+        'success': True,
+        'message': f'Cache limpiado. Se eliminaron {cache_size} entradas.'
+    }), 200
+
+@app.route('/export_model_report', methods=['GET'])
+def export_model_report():
+    """Exportar reporte del modelo en formato JSON"""
+    try:
+        if not os.path.exists('model_results.json'):
+            return jsonify({'error': 'No hay resultados de modelo disponibles'}), 404
+        
+        with open('model_results.json', 'r', encoding='utf-8') as f:
+            results = json.load(f)
+        
+        # Agregar timestamp
+        results['export_timestamp'] = time.strftime('%Y-%m-%d %H:%M:%S')
+        
+        return jsonify(results), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/model_info', methods=['GET'])
+def model_info():
+    """Información general del modelo y sistema"""
+    return jsonify({
+        'model_type': 'Logistic Regression with TF-IDF',
+        'validation_method': 'Hold-out Split',
+        'sentiment_analyzer': 'VADER + Machine Learning',
+        'features': {
+            'tfidf_max_features': 1000,
+            'ngram_range': '(1, 2)',
+            'preprocessing': 'Text cleaning, stopword removal'
+        },
+        'server_info': {
+            'cache_size': len(sentiment_cache),
+            'files_available': {
+                'transcriptions': os.path.exists(TRANSCRIPTIONS_CSV),
+                'model_results': os.path.exists('model_results.json')
+            }
+        }
+    }), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
