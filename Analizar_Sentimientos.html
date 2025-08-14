@@ -102,12 +102,15 @@
         <main class="container mx-auto px-4 py-8">
             <!-- Process Section -->
             <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
-                <h2 class="text-xl font-semibold text-gray-800 mb-4">Procesar Transcripciones Existentes</h2>
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Procesar Transcripciones</h2>
                 <div class="flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4">
                     <div class="flex-1">
                         <p class="text-gray-600 text-sm mb-2">
-                            Analizar todas las transcripciones del archivo <code class="bg-gray-100 px-2 py-1 rounded">transcriptions.csv</code>
+                            Analizar sentimientos de todas las transcripciones en <code class="bg-gray-100 px-2 py-1 rounded">transcriptions.csv</code>
                         </p>
+                        <div id="processStatus" class="text-sm text-gray-500 mb-2">
+                            Estado: Cargando información...
+                        </div>
                         <div id="progressBar" class="hidden w-full bg-gray-200 rounded-full h-2">
                             <div class="progress-bar bg-indigo-600 h-2 rounded-full" style="width: 0%"></div>
                         </div>
@@ -335,50 +338,43 @@
             try {
                 showNotification('🔄 Cargando datos existentes...', 'info');
                 
-                // Intentar cargar datos ya procesados
-                const response = await axios.get('https://audio-preprocessing-api-production.up.railway.app/download_processed_csv', {
-                    responseType: 'text'
-                });
+                // Cargar transcripciones del archivo original
+                const response = await axios.get('https://audio-preprocessing-api-production.up.railway.app/get_transcriptions');
                 
-                if (response.data) {
-                    const rows = response.data.split('\n').filter(row => row.trim() !== '');
-                    if (rows.length > 1) {
-                        const headers = rows[0].split(',');
+                if (response.data && response.data.total_count > 0) {
+                    totalTranscriptions = response.data.total_count;
+                    
+                    // Verificar si ya tiene datos de sentimiento procesados
+                    if (response.data.has_sentiment_data && response.data.processed_count > 0) {
+                        // Filtrar solo los datos que tienen sentimiento procesado
+                        const processedData = response.data.transcriptions.filter(item => 
+                            item.sentimiento_predicho && item.sentimiento_predicho !== 'Sin procesar'
+                        );
                         
-                        currentData = [];
-                        for (let i = 1; i < rows.length; i++) {
-                            const values = rows[i].split(',');
-                            if (values.length >= headers.length) {
-                                const row = {};
-                                headers.forEach((header, index) => {
-                                    row[header.trim().replace(/"/g, '')] = values[index] ? values[index].trim().replace(/"/g, '') : '';
-                                });
-                                currentData.push(row);
-                            }
-                        }
-                        
-                        if (currentData.length > 0) {
-                            // Para datos cargados desde CSV, usar el mismo número para total y procesados
-                            totalTranscriptions = currentData.length;
+                        if (processedData.length > 0) {
+                            currentData = processedData;
                             updateDashboard(currentData, totalTranscriptions);
-                            showNotification(`📊 ${currentData.length} registros cargados`, 'success');
+                            updateProcessStatus(response.data.processed_count, totalTranscriptions, true);
+                            showNotification(`📊 ${processedData.length} de ${totalTranscriptions} opiniones ya procesadas`, 'success');
+                        } else {
+                            // Actualizar solo el contador total
+                            document.getElementById('totalOpinions').textContent = totalTranscriptions;
+                            updateProcessStatus(0, totalTranscriptions, false);
+                            showNotification(`📝 ${totalTranscriptions} transcripciones disponibles. Haz clic en "Procesar Sentimientos" para analizarlas.`, 'info', 6000);
                         }
-                    }
-                }
-            } catch (error) {
-                console.log('No hay datos procesados previos, esto es normal');
-                // Intentar cargar transcripciones sin procesar
-                try {
-                    const transcriptionsResponse = await axios.get('https://audio-preprocessing-api-production.up.railway.app/get_transcriptions');
-                    if (transcriptionsResponse.data && transcriptionsResponse.data.total_count > 0) {
-                        totalTranscriptions = transcriptionsResponse.data.total_count;
-                        // Actualizar solo el contador total si no hay datos procesados
+                    } else {
+                        // No hay datos de sentimiento, solo mostrar el total
                         document.getElementById('totalOpinions').textContent = totalTranscriptions;
+                        updateProcessStatus(0, totalTranscriptions, false);
                         showNotification(`📝 ${totalTranscriptions} transcripciones disponibles. Haz clic en "Procesar Sentimientos" para analizarlas.`, 'info', 6000);
                     }
-                } catch (transcriptionsError) {
-                    console.log('No hay transcripciones disponibles');
+                } else {
+                    showNotification('No se encontraron transcripciones', 'info');
                 }
+                
+            } catch (error) {
+                console.error('Error al cargar datos:', error);
+                showNotification('Error al cargar datos existentes', 'error');
             }
         }
 
@@ -586,6 +582,20 @@
                 case 'Negativo': return 'bg-red-100 text-red-800 border border-red-200';
                 case 'Neutral': return 'bg-yellow-100 text-yellow-800 border border-yellow-200';
                 default: return 'bg-gray-100 text-gray-800 border border-gray-200';
+            }
+        }
+
+        function updateProcessStatus(processed, total, hasData) {
+            const statusElement = document.getElementById('processStatus');
+            if (hasData && processed > 0) {
+                statusElement.innerHTML = `
+                    <span class="text-green-600">✅ ${processed} de ${total} transcripciones procesadas</span>
+                    ${processed < total ? '<span class="text-blue-600 ml-2">- Procesar restantes</span>' : ''}
+                `;
+            } else if (total > 0) {
+                statusElement.innerHTML = `<span class="text-amber-600">⏳ ${total} transcripciones pendientes de procesar</span>`;
+            } else {
+                statusElement.innerHTML = `<span class="text-gray-500">No hay transcripciones disponibles</span>`;
             }
         }
 

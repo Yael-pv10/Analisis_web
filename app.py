@@ -205,15 +205,29 @@ def analyze_sentiments():
             processed = min(i + batch_size, len(texts))
             print(f"   Procesado: {processed}/{len(texts)} ({processed/len(texts)*100:.1f}%)")
 
-        # Asignar resultados
-        df_clean["sentimiento_predicho"] = [r["label"] for r in all_results]
-        df_clean["score"] = [r["score"] for r in all_results]
-        df_clean["rank"] = [r["rank"] for r in all_results]
+        # Asignar resultados al DataFrame original (df)
+        # Primero inicializar las columnas para todos los registros
+        df["sentimiento_predicho"] = "Sin procesar"
+        df["score"] = 0.0
+        df["rank"] = 0
 
-        # Guardar CSV con TODOS los resultados (incluye neutros)
+        # Luego actualizar solo los registros que fueron procesados
+        for i, result in enumerate(all_results):
+            # Encontrar el índice original en df basándose en el texto limpio
+            original_idx = df[df["transcription_clean"] == texts[i]].index[0]
+            df.loc[original_idx, "sentimiento_predicho"] = result["label"]
+            df.loc[original_idx, "score"] = result["score"]
+            df.loc[original_idx, "rank"] = result["rank"]
+
+        # Guardar el archivo original actualizado con las nuevas columnas
+        df.to_csv(TRANSCRIPTIONS_CSV, index=False, encoding='utf-8-sig')
+        print(f"✅ Archivo original actualizado: {TRANSCRIPTIONS_CSV}")
+
+        # También crear una copia con solo los datos procesados para compatibilidad
         output_path = "opiniones_con_sentimientos.csv"
-        df_clean.to_csv(output_path, index=False, encoding='utf-8-sig')
-        print(f"📊 Resultados guardados: {len(df_clean)} opiniones totales")
+        df_processed = df[df["sentimiento_predicho"] != "Sin procesar"].copy()
+        df_processed.to_csv(output_path, index=False, encoding='utf-8-sig')
+        print(f"📊 Archivo de procesados creado: {output_path}")
 
         # Preparar respuesta con TODOS los datos para el frontend
         response_data = {
@@ -221,7 +235,8 @@ def analyze_sentiments():
             "processed_opinions": []
         }
         
-        for _, row in df_clean.iterrows():
+        # Solo enviar los datos que fueron procesados al frontend
+        for _, row in df_processed.iterrows():
             response_data["processed_opinions"].append({
                 "transcription": row["transcription"],
                 "sentimiento_predicho": row["sentimiento_predicho"],
@@ -232,8 +247,9 @@ def analyze_sentiments():
         processing_time = time.time() - start_time
         print(f"✅ Procesamiento completado en {processing_time:.2f} segundos")
         print(f"📊 Total transcripciones: {len(df)}")
-        print(f"📊 Opiniones procesadas: {len(df_clean)}")
-        print(f"📄 Resultados guardados en: {output_path}")
+        print(f"📊 Opiniones procesadas: {len(df_processed)}")
+        print(f"📄 Archivo original actualizado: {TRANSCRIPTIONS_CSV}")
+        print(f"📄 Archivo de procesados: {output_path}")
 
         return jsonify(response_data), 200
 
@@ -270,15 +286,26 @@ def save_transcription():
 
 @app.route('/get_transcriptions', methods=['GET'])
 def get_transcriptions():
-    """Endpoint para obtener todas las transcripciones"""
+    """Endpoint para obtener todas las transcripciones con sentimientos si existen"""
     if not os.path.exists(TRANSCRIPTIONS_CSV):
         return jsonify({'error': 'No hay archivo de transcripciones'}), 404
     
     try:
         df = pd.read_csv(TRANSCRIPTIONS_CSV)
+        
+        # Verificar si ya tiene columnas de sentimiento
+        has_sentiment = 'sentimiento_predicho' in df.columns
+        processed_count = 0
+        
+        if has_sentiment:
+            # Contar cuántos tienen sentimiento procesado
+            processed_count = len(df[df['sentimiento_predicho'] != 'Sin procesar'])
+        
         return jsonify({
             'total_count': len(df),
-            'transcriptions': df.to_dict(orient='records')
+            'processed_count': processed_count,
+            'has_sentiment_data': has_sentiment,
+            'transcriptions': df.to_dict(orient='records') if has_sentiment else df.to_dict(orient='records')
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
