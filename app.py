@@ -165,14 +165,15 @@ def analyze_sentiments():
     start_time = time.time()
 
     # Verificar si el archivo CSV existe
-    file_path = "transcriptions.csv"
+    file_path = TRANSCRIPTIONS_CSV  # Usar la variable global definida
     if not os.path.exists(file_path):
         print(f"❌ No se encontró el archivo: {file_path}")
         return jsonify({'error': 'Archivo CSV no encontrado'}), 400
 
     try:
         print(f"📂 Leyendo archivo: {file_path}")
-        df = pd.read_csv(file_path)
+        # Leer el archivo con encoding correcto
+        df = pd.read_csv(file_path, encoding='utf-8-sig')
         print(f"✅ Archivo leído correctamente. {len(df)} filas encontradas")
 
         # Verificar columna transcription
@@ -180,81 +181,191 @@ def analyze_sentiments():
             print("❌ La columna 'transcription' no existe en el CSV")
             return jsonify({'error': "Columna 'transcription' no encontrada"}), 400
 
+        # Inicializar columnas de sentimiento si no existen
+        if "sentimiento_predicho" not in df.columns:
+            df["sentimiento_predicho"] = "Sin procesar"
+        if "score" not in df.columns:
+            df["score"] = 0.0
+        if "rank" not in df.columns:
+            df["rank"] = 0
+
         # Preprocesar texto rápidamente
         print("🔹 Preprocesando texto...")
         df["transcription_clean"] = df["transcription"].apply(preprocess_text_fast)
         
-        # Filtrar textos vacíos
-        df_clean = df[df["transcription_clean"].str.len() > 0].copy()
-        print(f"📊 {len(df_clean)} textos válidos para procesar")
+        # Identificar qué textos necesitan procesarse
+        mask_to_process = (
+            (df["transcription_clean"].str.len() > 0) & 
+            (df["sentimiento_predicho"] == "Sin procesar")
+        )
+        
+        df_to_process = df[mask_to_process].copy()
+        print(f"📊 {len(df_to_process)} textos nuevos para procesar")
+        print(f"📊 {len(df[df['sentimiento_predicho'] != 'Sin procesar'])} ya procesados anteriormente")
 
-        # Análisis de sentimiento en lotes
+        if len(df_to_process) == 0:
+            print("ℹ️ No hay textos nuevos para procesar")
+            # Devolver datos existentes
+            processed_data = df[df["sentimiento_predicho"] != "Sin procesar"].copy()
+            response_data = {
+                "total_transcriptions": len(df),
+                "processed_opinions": []
+            }
+            
+            for _, row in processed_data.iterrows():
+                response_data["processed_opinions"].append({
+                    "transcription": row["transcription"],
+                    "sentimiento_predicho": row["sentimiento_predicho"],
+                    "rank": row["rank"],
+                    "score": round(float(row["score"]), 3)
+                })
+            
+            return jsonify(response_data), 200
+
+        # Análisis de sentimiento en lotes para textos nuevos
         print("🔹 Aplicando análisis de sentimientos...")
-        texts = df_clean["transcription_clean"].tolist()
+        texts_to_process = df_to_process["transcription_clean"].tolist()
         
         # Procesar en lotes pequeños para mejor rendimiento
         batch_size = 50
         all_results = []
         
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i+batch_size]
+        for i in range(0, len(texts_to_process), batch_size):
+            batch = texts_to_process[i:i+batch_size]
             batch_results = analyze_sentiment_batch(batch)
             all_results.extend(batch_results)
             
             # Mostrar progreso
-            processed = min(i + batch_size, len(texts))
-            print(f"   Procesado: {processed}/{len(texts)} ({processed/len(texts)*100:.1f}%)")
+            processed = min(i + batch_size, len(texts_to_process))
+            print(f"   Procesado: {processed}/{len(texts_to_process)} ({processed/len(texts_to_process)*100:.1f}%)")
 
-        # Asignar resultados al DataFrame original (df)
-        # Primero inicializar las columnas para todos los registros
-        df["sentimiento_predicho"] = "Sin procesar"
-        df["score"] = 0.0
-        df["rank"] = 0
-
-        # Luego actualizar solo los registros que fueron procesados
+        # Asignar resultados al DataFrame original
+        print("🔹 Guardando resultados...")
+        processed_indices = df_to_process.index.tolist()
+        
         for i, result in enumerate(all_results):
-            # Encontrar el índice original en df basándose en el texto limpio
-            original_idx = df[df["transcription_clean"] == texts[i]].index[0]
-            df.loc[original_idx, "sentimiento_predicho"] = result["label"]
-            df.loc[original_idx, "score"] = result["score"]
-            df.loc[original_idx, "rank"] = result["rank"]
+            idx = processed_indices[i]
+            df.loc[idx, "sentimiento_predicho"] = result["label"]
+            df.loc[idx, "score"] = result["score"]
+            df.loc[idx, "rank"] = result["rank"]
 
-        # Guardar el archivo original actualizado con las nuevas columnas
-        df.to_csv(TRANSCRIPTIONS_CSV, index=False, encoding='utf-8-sig')
-        print(f"✅ Archivo original actualizado: {TRANSCRIPTIONS_CSV}")
+        # Eliminar columna temporal de texto limpio antes de guardar
+        if "transcription_clean" in df.columns:
+            df = df.drop("transcription_clean", axis=1)
 
-        # También crear una copia con solo los datos procesados para compatibilidad
-        output_path = "opiniones_con_sentimientos.csv"
-        df_processed = df[df["sentimiento_predicho"] != "Sin procesar"].copy()
-        df_processed.to_csv(output_path, index=False, encoding='utf-8-sig')
-        print(f"📊 Archivo de procesados creado: {output_path}")
+        # Guardar el archivo original actualizado
+        try:
+            # Hacer backup del archivo original por seguridad
+            backup_path = f"{TRANSCRIPTIONS_CSV}.backup"
+            if os.path.exists(TRANSCRIPTIONS_CSV):
+                import shutil
+                shutil.copy2(TRANSCRIPTIONS_CSV, backup_path)
+                print(f"📋 Backup creado: {backup_path}")
+            
+            # Guardar archivo actualizado
+            df.to_csv(TRANSCRIPTIONS_CSV, index=False, encoding='utf-8-sig')
+            print(f"✅ Archivo original actualizado: {TRANSCRIPTIONS_CSV}")
+            
+            # Verificar que se guardó correctamente
+            df_verify = pd.read_csv(TRANSCRIPTIONS_CSV, encoding='utf-8-sig')
+            processed_count = len(df_verify[df_verify["sentimiento_predicho"] != "Sin procesar"])
+            print(f"📊 Verificación: {processed_count} registros procesados guardados")
+            
+        except Exception as save_error:
+            print(f"❌ Error al guardar archivo: {save_error}")
+            return jsonify({'error': f'Error al guardar: {save_error}'}), 500
 
-        # Preparar respuesta con TODOS los datos para el frontend
+        # Preparar respuesta con TODOS los datos procesados
         response_data = {
-            "total_transcriptions": len(df),  # TODAS las transcripciones del archivo original
+            "total_transcriptions": len(df),
             "processed_opinions": []
         }
         
-        # Solo enviar los datos que fueron procesados al frontend
+        # Solo enviar los datos que tienen sentimiento procesado
+        df_processed = df[df["sentimiento_predicho"] != "Sin procesar"].copy()
+        
         for _, row in df_processed.iterrows():
             response_data["processed_opinions"].append({
-                "transcription": row["transcription"],
-                "sentimiento_predicho": row["sentimiento_predicho"],
-                "rank": row["rank"],
-                "score": round(row["score"], 3)
+                "transcription": str(row["transcription"]),
+                "sentimiento_predicho": str(row["sentimiento_predicho"]),
+                "rank": int(row["rank"]) if pd.notna(row["rank"]) else 0,
+                "score": round(float(row["score"]), 3) if pd.notna(row["score"]) else 0.0
             })
 
         processing_time = time.time() - start_time
         print(f"✅ Procesamiento completado en {processing_time:.2f} segundos")
         print(f"📊 Total transcripciones: {len(df)}")
-        print(f"📊 Opiniones procesadas: {len(df_processed)}")
-        print(f"📄 Archivo original actualizado: {TRANSCRIPTIONS_CSV}")
-        print(f"📄 Archivo de procesados: {output_path}")
+        print(f"📊 Nuevas procesadas: {len(all_results)}")
+        print(f"📊 Total procesadas: {len(df_processed)}")
 
         return jsonify(response_data), 200
 
     except Exception as e:
         print(f"❌ Error en analyze_sentiments: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+# También actualiza el endpoint para verificar el estado del archivo
+@app.route('/get_transcriptions', methods=['GET'])
+def get_transcriptions():
+    """Endpoint para obtener todas las transcripciones con sentimientos si existen"""
+    if not os.path.exists(TRANSCRIPTIONS_CSV):
+        return jsonify({'error': 'No hay archivo de transcripciones'}), 404
+    
+    try:
+        df = pd.read_csv(TRANSCRIPTIONS_CSV, encoding='utf-8-sig')
+        
+        # Verificar si ya tiene columnas de sentimiento
+        has_sentiment = 'sentimiento_predicho' in df.columns
+        processed_count = 0
+        
+        if has_sentiment:
+            # Contar cuántos tienen sentimiento procesado (no "Sin procesar")
+            processed_count = len(df[
+                (df['sentimiento_predicho'].notna()) & 
+                (df['sentimiento_predicho'] != 'Sin procesar') &
+                (df['sentimiento_predicho'] != '')
+            ])
+        
+        return jsonify({
+            'total_count': len(df),
+            'processed_count': processed_count,
+            'has_sentiment_data': has_sentiment,
+            'transcriptions': df.to_dict(orient='records')
+        }), 200
+    except Exception as e:
+        print(f"Error en get_transcriptions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# Función auxiliar para verificar la integridad del archivo
+@app.route('/verify_csv', methods=['GET'])
+def verify_csv():
+    """Endpoint para verificar la integridad del archivo CSV"""
+    if not os.path.exists(TRANSCRIPTIONS_CSV):
+        return jsonify({'error': 'Archivo no encontrado'}), 404
+    
+    try:
+        df = pd.read_csv(TRANSCRIPTIONS_CSV, encoding='utf-8-sig')
+        
+        stats = {
+            'total_rows': len(df),
+            'columns': list(df.columns),
+            'has_sentiment_columns': all(col in df.columns for col in ['sentimiento_predicho', 'score', 'rank']),
+        }
+        
+        if stats['has_sentiment_columns']:
+            stats['sentiment_stats'] = {
+                'sin_procesar': len(df[df['sentimiento_predicho'] == 'Sin procesar']),
+                'positivo': len(df[df['sentimiento_predicho'] == 'Positivo']),
+                'negativo': len(df[df['sentimiento_predicho'] == 'Negativo']),
+                'neutral': len(df[df['sentimiento_predicho'] == 'Neutral']),
+            }
+        
+        return jsonify(stats), 200
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 def transcribe_audio(audio_path):
@@ -283,32 +394,6 @@ def save_transcription():
         save_transcription_to_csv(filename, transcription)
         return jsonify({'message': 'Transcripción guardada exitosamente'}), 200
     return jsonify({'error': 'No se recibió transcripción'}), 400
-
-@app.route('/get_transcriptions', methods=['GET'])
-def get_transcriptions():
-    """Endpoint para obtener todas las transcripciones con sentimientos si existen"""
-    if not os.path.exists(TRANSCRIPTIONS_CSV):
-        return jsonify({'error': 'No hay archivo de transcripciones'}), 404
-    
-    try:
-        df = pd.read_csv(TRANSCRIPTIONS_CSV)
-        
-        # Verificar si ya tiene columnas de sentimiento
-        has_sentiment = 'sentimiento_predicho' in df.columns
-        processed_count = 0
-        
-        if has_sentiment:
-            # Contar cuántos tienen sentimiento procesado
-            processed_count = len(df[df['sentimiento_predicho'] != 'Sin procesar'])
-        
-        return jsonify({
-            'total_count': len(df),
-            'processed_count': processed_count,
-            'has_sentiment_data': has_sentiment,
-            'transcriptions': df.to_dict(orient='records') if has_sentiment else df.to_dict(orient='records')
-        }), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
