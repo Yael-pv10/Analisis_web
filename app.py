@@ -210,18 +210,19 @@ def analyze_sentiments():
         df_clean["score"] = [r["score"] for r in all_results]
         df_clean["rank"] = [r["rank"] for r in all_results]
 
-        # Filtrar solo positivos y negativos (omitir neutrales)
-        df_filtered = df_clean[df_clean["sentimiento_predicho"].isin(["Positivo", "Negativo"])].copy()
-        print(f"📊 Resultados filtrados: {len(df_filtered)} opiniones (solo positivas/negativas)")
-
-        # Guardar CSV con resultados
+        # Guardar CSV con TODOS los resultados (incluye neutros)
         output_path = "opiniones_con_sentimientos.csv"
-        df_filtered.to_csv(output_path, index=False, encoding='utf-8-sig')
+        df_clean.to_csv(output_path, index=False, encoding='utf-8-sig')
+        print(f"📊 Resultados guardados: {len(df_clean)} opiniones totales")
+
+        # Preparar respuesta con TODOS los datos para el frontend
+        response_data = {
+            "total_transcriptions": len(df),  # TODAS las transcripciones del archivo original
+            "processed_opinions": []
+        }
         
-        # Preparar respuesta con estructura esperada por el frontend
-        response_data = []
-        for _, row in df_filtered.iterrows():
-            response_data.append({
+        for _, row in df_clean.iterrows():
+            response_data["processed_opinions"].append({
                 "transcription": row["transcription"],
                 "sentimiento_predicho": row["sentimiento_predicho"],
                 "rank": row["rank"],
@@ -230,6 +231,8 @@ def analyze_sentiments():
 
         processing_time = time.time() - start_time
         print(f"✅ Procesamiento completado en {processing_time:.2f} segundos")
+        print(f"📊 Total transcripciones: {len(df)}")
+        print(f"📊 Opiniones procesadas: {len(df_clean)}")
         print(f"📄 Resultados guardados en: {output_path}")
 
         return jsonify(response_data), 200
@@ -273,7 +276,10 @@ def get_transcriptions():
     
     try:
         df = pd.read_csv(TRANSCRIPTIONS_CSV)
-        return jsonify(df.to_dict(orient='records')), 200
+        return jsonify({
+            'total_count': len(df),
+            'transcriptions': df.to_dict(orient='records')
+        }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

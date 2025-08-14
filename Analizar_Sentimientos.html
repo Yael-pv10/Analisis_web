@@ -238,6 +238,7 @@
         let filteredData = [];
         let displayedCount = 10;
         let currentFilter = 'all';
+        let totalTranscriptions = 0; // Total de transcripciones en el archivo original
 
         // Initialize charts
         let sentimentPieChart;
@@ -303,10 +304,11 @@
                 
                 updateProgress(80);
                 
-                if (response.data && response.data.length > 0) {
-                    currentData = response.data;
-                    updateDashboard(currentData);
-                    showNotification(`✅ Análisis completado! ${currentData.length} opiniones procesadas`, 'success', 5000);
+                if (response.data && response.data.processed_opinions && response.data.processed_opinions.length > 0) {
+                    currentData = response.data.processed_opinions;
+                    totalTranscriptions = response.data.total_transcriptions || response.data.processed_opinions.length;
+                    updateDashboard(currentData, totalTranscriptions);
+                    showNotification(`✅ Análisis completado! ${currentData.length} de ${totalTranscriptions} opiniones procesadas`, 'success', 5000);
                 } else {
                     showNotification('No se encontraron datos para procesar', 'error');
                 }
@@ -356,7 +358,9 @@
                         }
                         
                         if (currentData.length > 0) {
-                            updateDashboard(currentData);
+                            // Para datos cargados desde CSV, usar el mismo número para total y procesados
+                            totalTranscriptions = currentData.length;
+                            updateDashboard(currentData, totalTranscriptions);
                             showNotification(`📊 ${currentData.length} registros cargados`, 'success');
                         }
                     }
@@ -366,8 +370,11 @@
                 // Intentar cargar transcripciones sin procesar
                 try {
                     const transcriptionsResponse = await axios.get('https://audio-preprocessing-api-production.up.railway.app/get_transcriptions');
-                    if (transcriptionsResponse.data && transcriptionsResponse.data.length > 0) {
-                        showNotification(`📝 ${transcriptionsResponse.data.length} transcripciones disponibles. Haz clic en "Procesar Sentimientos" para analizarlas.`, 'info', 6000);
+                    if (transcriptionsResponse.data && transcriptionsResponse.data.total_count > 0) {
+                        totalTranscriptions = transcriptionsResponse.data.total_count;
+                        // Actualizar solo el contador total si no hay datos procesados
+                        document.getElementById('totalOpinions').textContent = totalTranscriptions;
+                        showNotification(`📝 ${totalTranscriptions} transcripciones disponibles. Haz clic en "Procesar Sentimientos" para analizarlas.`, 'info', 6000);
                     }
                 } catch (transcriptionsError) {
                     console.log('No hay transcripciones disponibles');
@@ -443,9 +450,9 @@
             });
         }
 
-        function updateDashboard(data) {
-            // Contar TODAS las opiniones (incluye neutros)
-            const totalOpinions = data.length;
+        function updateDashboard(data, totalCount = null) {
+            // Si se proporciona un total específico, usarlo; si no, usar el tamaño de los datos
+            const totalOpinions = totalCount !== null ? totalCount : data.length;
             
             // Contar solo positivos y negativos para contadores específicos
             const positiveCount = data.filter(item => item.sentimiento_predicho === 'Positivo').length;
@@ -456,6 +463,13 @@
             document.getElementById('totalOpinions').textContent = totalOpinions;
             document.getElementById('positiveCount').textContent = positiveCount;
             document.getElementById('negativeCount').textContent = negativeCount;
+
+            // Log para debug
+            console.log(`📊 Dashboard actualizado:`);
+            console.log(`   Total opiniones: ${totalOpinions}`);
+            console.log(`   Positivas: ${positiveCount}`);
+            console.log(`   Negativas: ${negativeCount}`);
+            console.log(`   Neutras: ${neutralCount}`);
 
             // Actualizar gráficos solo con positivos y negativos
             sentimentPieChart.data.datasets[0].data = [positiveCount, negativeCount];
