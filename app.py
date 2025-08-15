@@ -1157,12 +1157,6 @@ def preprocessing_steps():
     })
 
 
-@app.route('/download_processed_csv', methods=['GET'])
-def download_processed_csv():
-    if os.path.exists(PROCESSED_CSV):
-        return send_file(PROCESSED_CSV, as_attachment=True)
-    return jsonify({'error': 'Archivo procesado no encontrado'}), 404
-
 # Importar sys para información del sistema
 import sys
 
