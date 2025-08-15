@@ -390,18 +390,6 @@
         </div>
 
         <div class="dashboard">
-            <!-- Configuración de URL de la API -->
-            <div class="url-config">
-                <h3 style="margin-bottom: 10px; color: #1565c0;">🔗 Configuración de API</h3>
-                <label for="apiUrl" style="font-weight: 600;">URL del servidor:</label>
-                <input type="text" id="apiUrl" class="url-input" 
-                       value="https://audio-preprocessing-api-production.up.railway.app"
-                       placeholder="https://tu-api.railway.app">
-                <button class="btn" onclick="testConnection()" style="margin-top: 10px; font-size: 14px; padding: 8px 15px;">
-                    🔍 Probar Conexión
-                </button>
-            </div>
-
             <!-- Controles de entrenamiento -->
             <div class="controls">
                 <h2 style="margin-bottom: 20px; color: #2c3e50;">⚙️ Configuración del Modelo</h2>
@@ -669,12 +657,8 @@
             const accuracyDisplay = document.getElementById('accuracyDisplay');
             accuracyDisplay.innerHTML = `
                 <div class="accuracy-item">
-                    <div class="score">${(results.train_accuracy * 100).toFixed(1)}%</div>
-                    <div class="label">Precisión Entrenamiento</div>
-                </div>
-                <div class="accuracy-item">
                     <div class="score">${(results.test_accuracy * 100).toFixed(1)}%</div>
-                    <div class="label">Precisión Prueba</div>
+                    <div class="label">Acurracy</div>
                 </div>
                 <div class="accuracy-item">
                     <div class="score">${results.train_size + results.test_size}</div>
