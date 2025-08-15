@@ -76,44 +76,116 @@ sentiment_cache = {}
 cache_lock = threading.Lock()
 
 def preprocess_for_ml(df):
-    """Preprocesar datos para machine learning"""
-    # Filtrar solo las filas que tienen sentimiento procesado
-    df_processed = df[
-        (df['sentimiento_predicho'].notna()) & 
-        (df['sentimiento_predicho'] != 'Sin procesar') &
-        (df['sentimiento_predicho'] != '') &
-        (df['sentimiento_predicho'] != 'Sin texto') &
-        (df['transcription'].notna()) &
-        (df['transcription'] != '')
-    ].copy()
-    
-    # Limpiar textos
-    df_processed['text_clean'] = df_processed['transcription'].apply(preprocess_text_fast)
-    
-    # Filtrar textos vacíos después del preprocesamiento
-    df_processed = df_processed[df_processed['text_clean'].str.len() > 5]
-    
-    return df_processed
+    """Preprocesar datos para machine learning con mejor filtrado"""
+    try:
+        # Filtrar solo las filas que tienen sentimiento procesado
+        df_processed = df[
+            (df['sentimiento_predicho'].notna()) & 
+            (df['sentimiento_predicho'] != 'Sin procesar') &
+            (df['sentimiento_predicho'] != '') &
+            (df['sentimiento_predicho'] != 'Sin texto') &
+            (df['transcription'].notna()) &
+            (df['transcription'] != '') &
+            (df['transcription'].str.len() > 0)  # Asegurar que no esté vacío
+        ].copy()
+        
+        print(f"🔍 Registros después del filtro inicial: {len(df_processed)}")
+        
+        if len(df_processed) == 0:
+            return df_processed
+        
+        # Limpiar textos
+        df_processed['text_clean'] = df_processed['transcription'].apply(preprocess_text_fast)
+        
+        # Filtrar textos vacíos después del preprocesamiento
+        df_processed = df_processed[
+            (df_processed['text_clean'].notna()) &
+            (df_processed['text_clean'].str.len() > 5) &  # Al menos 5 caracteres
+            (df_processed['text_clean'].str.strip() != '')
+        ]
+        
+        print(f"🔍 Registros después de limpiar texto: {len(df_processed)}")
+        
+        # Verificar distribución de clases
+        if len(df_processed) > 0:
+            class_counts = df_processed['sentimiento_predicho'].value_counts()
+            print(f"📊 Distribución de clases: {dict(class_counts)}")
+            
+            # Filtrar clases con muy pocas muestras (menos de 2)
+            valid_classes = class_counts[class_counts >= 2].index
+            df_processed = df_processed[df_processed['sentimiento_predicho'].isin(valid_classes)]
+            
+            print(f"🔍 Registros después de filtrar clases pequeñas: {len(df_processed)}")
+        
+        return df_processed
+        
+    except Exception as e:
+        print(f"❌ Error en preprocess_for_ml: {e}")
+        return pd.DataFrame()  # Retornar DataFrame vacío en caso de error
 
 def create_confusion_matrix_plot(y_true, y_pred, labels):
-    """Crear matriz de confusión como imagen base64"""
-    plt.figure(figsize=(8, 6))
-    cm = confusion_matrix(y_true, y_pred, labels=labels)
-    
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                xticklabels=labels, yticklabels=labels)
-    plt.title('Matriz de Confusión')
-    plt.ylabel('Valores Reales')
-    plt.xlabel('Predicciones')
-    
-    # Convertir a base64
-    img_buffer = io.BytesIO()
-    plt.savefig(img_buffer, format='png', bbox_inches='tight', dpi=150)
-    img_buffer.seek(0)
-    img_str = base64.b64encode(img_buffer.getvalue()).decode()
-    plt.close()
-    
-    return img_str
+    """Crear matriz de confusión como imagen base64 con manejo robusto de errores"""
+    try:
+        plt.figure(figsize=(8, 6))
+        
+        # Crear matriz de confusión
+        cm = confusion_matrix(y_true, y_pred, labels=labels)
+        
+        # Verificar si la matriz está vacía
+        if cm.size == 0:
+            plt.text(0.5, 0.5, 'No hay datos suficientes\npara la matriz de confusión', 
+                    ha='center', va='center', transform=plt.gca().transAxes,
+                    fontsize=14, bbox=dict(boxstyle="round", facecolor='wheat', alpha=0.5))
+            plt.axis('off')
+        else:
+            # Crear heatmap
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                       xticklabels=labels, yticklabels=labels,
+                       cbar_kws={'label': 'Número de muestras'})
+            
+            plt.title('Matriz de Confusión', fontsize=16, fontweight='bold', pad=20)
+            plt.ylabel('Valores Reales', fontsize=12)
+            plt.xlabel('Predicciones', fontsize=12)
+            
+            # Rotar etiquetas si son muy largas
+            plt.xticks(rotation=45, ha='right')
+            plt.yticks(rotation=0)
+        
+        plt.tight_layout()
+        
+        # Convertir a base64
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', bbox_inches='tight', 
+                   dpi=150, facecolor='white', edgecolor='none')
+        img_buffer.seek(0)
+        img_str = base64.b64encode(img_buffer.getvalue()).decode()
+        plt.close()  # Importante: cerrar la figura para liberar memoria
+        
+        return img_str
+        
+    except Exception as e:
+        print(f"❌ Error creando matriz de confusión: {e}")
+        
+        # Crear imagen de error
+        try:
+            plt.figure(figsize=(6, 4))
+            plt.text(0.5, 0.5, f'Error al crear\nmatriz de confusión:\n{str(e)[:50]}...', 
+                    ha='center', va='center', transform=plt.gca().transAxes,
+                    fontsize=12, bbox=dict(boxstyle="round", facecolor='lightcoral', alpha=0.7))
+            plt.axis('off')
+            plt.tight_layout()
+            
+            img_buffer = io.BytesIO()
+            plt.savefig(img_buffer, format='png', bbox_inches='tight', 
+                       dpi=150, facecolor='white', edgecolor='none')
+            img_buffer.seek(0)
+            img_str = base64.b64encode(img_buffer.getvalue()).decode()
+            plt.close()
+            
+            return img_str
+            
+        except:
+            return None
 
 @app.route('/train_model', methods=['POST'])
 def train_model():
@@ -149,47 +221,100 @@ def train_model():
         
         print(f"📝 Clases únicas: {np.unique(y)}")
         
-        # Vectorización TF-IDF
+        # Filtrar textos muy cortos que podrían causar problemas
+        valid_indices = [i for i, text in enumerate(X) if len(text.strip()) > 3]
+        X = X[valid_indices]
+        y = y[valid_indices]
+        
+        print(f"🔍 Después de filtrar textos cortos: {len(X)} registros")
+        
+        if len(X) < 10:
+            return jsonify({'error': 'Muy pocos textos válidos después del filtrado'}), 400
+        
+        # Verificar que hay suficientes muestras por clase
+        class_counts = pd.Series(y).value_counts()
+        min_class_count = class_counts.min()
+        
+        if min_class_count < 2:
+            return jsonify({'error': f'Clase con muy pocas muestras: {class_counts.to_dict()}'}), 400
+        
+        # Vectorización TF-IDF con parámetros más conservadores
         vectorizer = TfidfVectorizer(
-            max_features=1000,
+            max_features=min(500, len(X) // 2),  # Reducir características
             stop_words=list(stop_words_spanish),
             ngram_range=(1, 2),
-            min_df=2
+            min_df=max(1, len(X) // 50),  # Ajustar min_df dinámicamente
+            max_df=0.95,  # Ignorar términos muy frecuentes
+            token_pattern=r'\b[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]{2,}\b'  # Solo palabras válidas
         )
         
-        X_tfidf = vectorizer.fit_transform(X)
-        print(f"🔤 Características TF-IDF: {X_tfidf.shape}")
+        try:
+            X_tfidf = vectorizer.fit_transform(X)
+            print(f"🔤 Características TF-IDF: {X_tfidf.shape}")
+        except Exception as e:
+            print(f"❌ Error en vectorización: {e}")
+            return jsonify({'error': f'Error en la vectorización TF-IDF: {str(e)}'}), 400
+        
+        # Verificar que la matriz no esté vacía
+        if X_tfidf.nnz == 0:
+            return jsonify({'error': 'La matriz TF-IDF resultó vacía. Revisa el preprocesamiento del texto.'}), 400
         
         # Codificar etiquetas
         label_encoder = LabelEncoder()
         y_encoded = label_encoder.fit_transform(y)
         
-        # División Hold-out (80% entrenamiento, 20% prueba)
+        # División Hold-out con verificación
         test_size = float(request.json.get('test_size', 0.2))
         random_state = int(request.json.get('random_state', 42))
         
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_tfidf, y_encoded, 
-            test_size=test_size, 
-            random_state=random_state,
-            stratify=y_encoded
-        )
+        # Asegurar que hay suficientes muestras para la división
+        min_test_samples = max(1, min_class_count // 2)
+        max_test_size = min(0.4, 1 - (min_test_samples / len(X)))
+        test_size = min(test_size, max_test_size)
         
-        print(f"📊 División: Train={len(X_train)}, Test={len(X_test)}")
+        print(f"📊 Test size ajustado: {test_size:.2f}")
         
-        # Entrenar modelo de Regresión Logística
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_tfidf, y_encoded, 
+                test_size=test_size, 
+                random_state=random_state,
+                stratify=y_encoded
+            )
+        except Exception as e:
+            print(f"❌ Error en train_test_split: {e}")
+            # Intentar sin stratify si falla
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_tfidf, y_encoded, 
+                test_size=test_size, 
+                random_state=random_state
+            )
+        
+        print(f"📊 División: Train={X_train.shape[0]}, Test={X_test.shape[0]}")
+        
+        # Entrenar modelo de Regresión Logística con parámetros más robustos
         model = LogisticRegression(
             random_state=random_state,
-            max_iter=1000,
-            class_weight='balanced'
+            max_iter=2000,  # Más iteraciones
+            class_weight='balanced',
+            solver='liblinear',  # Solver más estable para datasets pequeños
+            C=1.0  # Regularización moderada
         )
         
-        model.fit(X_train, y_train)
-        print("✅ Modelo entrenado")
+        try:
+            model.fit(X_train, y_train)
+            print("✅ Modelo entrenado")
+        except Exception as e:
+            print(f"❌ Error en entrenamiento del modelo: {e}")
+            return jsonify({'error': f'Error al entrenar el modelo: {str(e)}'}), 500
         
         # Predicciones
-        y_pred_train = model.predict(X_train)
-        y_pred_test = model.predict(X_test)
+        try:
+            y_pred_train = model.predict(X_train)
+            y_pred_test = model.predict(X_test)
+        except Exception as e:
+            print(f"❌ Error en predicciones: {e}")
+            return jsonify({'error': f'Error en las predicciones: {str(e)}'}), 500
         
         # Métricas de desempeño
         train_accuracy = accuracy_score(y_train, y_pred_train)
@@ -199,49 +324,64 @@ def train_model():
         
         # Reporte de clasificación
         class_names = label_encoder.classes_
-        classification_rep = classification_report(
-            y_test, y_pred_test, 
-            target_names=class_names,
-            output_dict=True
-        )
+        try:
+            classification_rep = classification_report(
+                y_test, y_pred_test, 
+                target_names=class_names,
+                output_dict=True,
+                zero_division=0  # Evitar errores de división por cero
+            )
+        except Exception as e:
+            print(f"⚠️ Error en classification_report: {e}")
+            classification_rep = {}
         
         # Matriz de confusión
-        confusion_img = create_confusion_matrix_plot(
-            label_encoder.inverse_transform(y_test),
-            label_encoder.inverse_transform(y_pred_test),
-            class_names
-        )
+        try:
+            confusion_img = create_confusion_matrix_plot(
+                label_encoder.inverse_transform(y_test),
+                label_encoder.inverse_transform(y_pred_test),
+                class_names
+            )
+        except Exception as e:
+            print(f"⚠️ Error en matriz de confusión: {e}")
+            confusion_img = None
         
         # Distribución de clases
         class_distribution = pd.Series(y).value_counts().to_dict()
         
-        # Características más importantes (coeficientes del modelo)
-        feature_names = vectorizer.get_feature_names_out()
+        # Características más importantes (con manejo de errores)
         top_features = {}
-        
-        for i, class_name in enumerate(class_names):
-            if len(class_names) == 2:
-                # Clasificación binaria
-                coefficients = model.coef_[0] if i == 1 else -model.coef_[0]
-            else:
-                # Clasificación multiclase
-                coefficients = model.coef_[i]
+        try:
+            feature_names = vectorizer.get_feature_names_out()
             
-            top_indices = coefficients.argsort()[-10:][::-1]
-            top_features[class_name] = [
-                {
-                    'feature': feature_names[idx],
-                    'coefficient': float(coefficients[idx])
-                }
-                for idx in top_indices
-            ]
+            for i, class_name in enumerate(class_names):
+                if len(class_names) == 2:
+                    # Clasificación binaria
+                    coefficients = model.coef_[0] if i == 1 else -model.coef_[0]
+                else:
+                    # Clasificación multiclase
+                    coefficients = model.coef_[i]
+                
+                # Obtener índices de características más importantes
+                top_indices = np.argsort(np.abs(coefficients))[-10:][::-1]
+                
+                top_features[class_name] = [
+                    {
+                        'feature': feature_names[idx],
+                        'coefficient': float(coefficients[idx])
+                    }
+                    for idx in top_indices
+                ]
+        except Exception as e:
+            print(f"⚠️ Error en características importantes: {e}")
+            top_features = {}
         
         # Guardar resultados del modelo
         model_results = {
             'model_type': 'Logistic Regression',
-            'train_size': len(X_train),
-            'test_size': len(X_test),
-            'total_features': X_tfidf.shape[1],
+            'train_size': int(X_train.shape[0]),
+            'test_size': int(X_test.shape[0]),
+            'total_features': int(X_tfidf.shape[1]),
             'train_accuracy': float(train_accuracy),
             'test_accuracy': float(test_accuracy),
             'class_distribution': class_distribution,
@@ -249,18 +389,20 @@ def train_model():
             'confusion_matrix_img': confusion_img,
             'top_features': top_features,
             'classes': list(class_names),
-            'test_split_ratio': test_size,
+            'test_split_ratio': float(test_size),
             'random_state': random_state
         }
         
         # Guardar en archivo JSON para persistencia
-        with open('model_results.json', 'w', encoding='utf-8') as f:
-            # Crear una copia sin la imagen para el JSON
-            json_results = model_results.copy()
-            json_results.pop('confusion_matrix_img', None)
-            json.dump(json_results, f, ensure_ascii=False, indent=2)
-        
-        print("✅ Resultados guardados")
+        try:
+            with open('model_results.json', 'w', encoding='utf-8') as f:
+                # Crear una copia sin la imagen para el JSON
+                json_results = model_results.copy()
+                json_results.pop('confusion_matrix_img', None)
+                json.dump(json_results, f, ensure_ascii=False, indent=2)
+            print("✅ Resultados guardados")
+        except Exception as e:
+            print(f"⚠️ Error al guardar resultados: {e}")
         
         return jsonify({
             'success': True,
@@ -406,23 +548,39 @@ def upload_audio():
     return jsonify({'transcription': transcription}), 200
 
 def preprocess_text_fast(text):
-    """Preprocesamiento rápido y simple"""
-    if pd.isna(text) or not isinstance(text, str):
+    """Preprocesamiento rápido y más robusto"""
+    try:
+        if pd.isna(text) or not isinstance(text, str) or text.strip() == "":
+            return ""
+        
+        # Convertir a string si no lo es
+        text = str(text)
+        
+        # Convertir a minúsculas
+        text = text.lower().strip()
+        
+        # Eliminar URLs, menciones, hashtags
+        text = re.sub(r'http\S+|www\.\S+|@\w+|#\w+', '', text)
+        
+        # Eliminar números solos (pero mantener palabras con números)
+        text = re.sub(r'\b\d+\b', '', text)
+        
+        # Mantener solo letras, números y algunos signos de puntuación importantes
+        text = re.sub(r'[^\w\s\.\!\?\,\;\:\(\)áéíóúÁÉÍÓÚüÜñÑ]', ' ', text)
+        
+        # Limpiar espacios múltiples
+        text = ' '.join(text.split())
+        
+        # Eliminar palabras muy cortas (menos de 2 caracteres)
+        words = text.split()
+        words = [word for word in words if len(word) >= 2]
+        text = ' '.join(words)
+        
+        return text.strip()
+        
+    except Exception as e:
+        print(f"⚠️ Error en preprocess_text_fast: {e}")
         return ""
-    
-    # Convertir a minúsculas
-    text = text.lower().strip()
-    
-    # Eliminar URLs, menciones, hashtags
-    text = re.sub(r'http\S+|www.\S+|@\w+|#\w+', '', text)
-    
-    # Eliminar caracteres especiales pero mantener emojis básicos
-    text = re.sub(r'[^\w\s!?¡¿.,;:()]', '', text)
-    
-    # Limpiar espacios múltiples
-    text = ' '.join(text.split())
-    
-    return text
 
 def analyze_sentiment_vader(text):
     """Análisis de sentimiento con VADER (muy rápido)"""
