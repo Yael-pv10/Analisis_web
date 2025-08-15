@@ -26,6 +26,7 @@
       position: sticky;
       top: 0;
       background-color: #f8fafc;
+      z-index: 10;
     }
     tr:nth-child(even) {
       background-color: #f8fafc;
@@ -37,86 +38,299 @@
       background-color: #f1f5f9;
       transform: scale(1.01);
     }
+    .step-badge {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .loading-spinner {
+      border: 3px solid #f3f4f6;
+      border-top: 3px solid #3b82f6;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .scroll-smooth {
+      scroll-behavior: smooth;
+    }
+    /* Mejorar el scroll para los anchors */
+    html {
+      scroll-behavior: smooth;
+    }
   </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
   <div class="container mx-auto px-4 py-8 max-w-7xl">
     <!-- Header -->
     <header class="mb-8">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-gray-800 mb-2">Visualización paso a paso del preprocesamiento</h1>
-          <p class="text-gray-600">Explora cada etapa del procesamiento de texto y los resultados TF-IDF</p>
+          <h1 class="text-4xl font-bold text-gray-800 mb-2">
+            <i class="fas fa-cogs text-indigo-600 mr-2"></i>
+            Visualización del Preprocesamiento
+          </h1>
+          <p class="text-gray-600 text-lg">Explora cada etapa del procesamiento de texto y los resultados TF-IDF</p>
         </div>
-        <button 
-          onclick="location.href='https://audio-preprocessing-api-production.up.railway.app/download_processed_csv'"
-          class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-all shadow-md hover:shadow-lg"
-        >
-          <i class="fas fa-file-csv"></i>
-          Descargar CSV Procesado
-        </button>
+        <div class="flex gap-3">
+          <button 
+            id="refreshBtn"
+            onclick="loadData()"
+            class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-all shadow-md hover:shadow-lg"
+          >
+            <i class="fas fa-sync-alt"></i>
+            Actualizar
+          </button>
+          <button 
+            onclick="downloadCSV()"
+            class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-all shadow-md hover:shadow-lg"
+          >
+            <i class="fas fa-file-csv"></i>
+            Descargar CSV
+          </button>
+        </div>
       </div>
     </header>
 
-    <!-- Loading/Content Area -->
+    <!-- Status Bar -->
+    <div id="statusBar" class="mb-6 hidden">
+      <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+        <div class="flex items-center">
+          <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+          <span id="statusText" class="text-blue-700"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Demo Section -->
+    <div class="mb-8 bg-white rounded-xl shadow-sm p-6">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
+        <i class="fas fa-flask text-orange-500"></i>
+        Prueba tu propio texto
+      </h2>
+      <div class="flex flex-col md:flex-row gap-4">
+        <textarea 
+          id="demoText" 
+          placeholder="Escribe aquí tu texto para ver el preprocesamiento paso a paso..."
+          class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+          rows="3"
+        ></textarea>
+        <button 
+          onclick="processDemoText()"
+          class="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded-lg transition-all shadow-md hover:shadow-lg"
+        >
+          <i class="fas fa-play mr-2"></i>
+          Procesar
+        </button>
+      </div>
+      <div id="demoResult" class="mt-4"></div>
+    </div>
+
+    <!-- Main Content Area -->
     <div id="output" class="bg-white rounded-xl shadow-sm p-6">
       <div class="flex justify-center items-center py-12">
         <div class="text-center">
-          <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mx-auto mb-4"></div>
-          <p class="text-gray-600">Cargando datos...</p>
+          <div class="loading-spinner mx-auto mb-4"></div>
+          <p class="text-gray-600">Cargando datos del preprocesamiento...</p>
         </div>
       </div>
     </div>
 
     <script>
       const BACKEND_URL = "https://audio-preprocessing-api-production.up.railway.app";
-      fetch(`${BACKEND_URL}/preprocessing_steps`)
-        .then(response => response.json())
-        .then(data => {
-          const output = document.getElementById('output');
-          output.innerHTML = '';
-          
-          const steps = data.steps;
-          const tfidf = data.tfidf;
-          let contentHTML = '';
+      
+      function showStatus(message, type = 'info') {
+        const statusBar = document.getElementById('statusBar');
+        const statusText = document.getElementById('statusText');
+        
+        statusText.textContent = message;
+        statusBar.className = `mb-6 ${type === 'error' ? 'bg-red-50 border-red-500' : 'bg-blue-50 border-blue-500'}`;
+        statusBar.classList.remove('hidden');
+        
+        setTimeout(() => {
+          statusBar.classList.add('hidden');
+        }, 5000);
+      }
+
+      function loadData() {
+        const output = document.getElementById('output');
+        const refreshBtn = document.getElementById('refreshBtn');
+        
+        // Show loading
+        output.innerHTML = `
+          <div class="flex justify-center items-center py-12">
+            <div class="text-center">
+              <div class="loading-spinner mx-auto mb-4"></div>
+              <p class="text-gray-600">Cargando pasos de preprocesamiento...</p>
+            </div>
+          </div>
+        `;
+        
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cargando...';
+        
+        fetch(`${BACKEND_URL}/preprocessing_steps`)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+          })
+          .then(data => {
+            console.log('Data received:', data);
+            
+            if (data.error) {
+              throw new Error(data.error);
+            }
+            
+            showStatus(`✅ Datos cargados: ${data.sample_size} transcripciones completas procesadas`, 'info');
+            renderData(data);
+          })
+          .catch(error => {
+            console.error('Error:', error);
+            showStatus(`❌ Error: ${error.message}`, 'error');
+            
+            output.innerHTML = `
+              <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0">
+                    <i class="fas fa-exclamation-triangle text-red-500 text-xl"></i>
+                  </div>
+                  <div class="ml-3">
+                    <h3 class="text-lg font-medium text-red-800 mb-2">Error al cargar los datos</h3>
+                    <p class="text-sm text-red-700 mb-3">
+                      ${error.message}
+                    </p>
+                    <div class="text-sm text-red-600">
+                      <p><strong>Posibles soluciones:</strong></p>
+                      <ul class="list-disc list-inside mt-1 space-y-1">
+                        <li>Verifica que el servidor esté funcionando</li>
+                        <li>Asegúrate de que existan transcripciones en el archivo CSV</li>
+                        <li>Revisa la consola del navegador para más detalles</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          })
+          .finally(() => {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Actualizar';
+          });
+      }
+
+      function renderData(data) {
+        const output = document.getElementById('output');
+        const steps = data.steps || [];
+        const tfidf = data.tfidf || [];
+        let contentHTML = '';
+
+        if (steps.length === 0) {
+          contentHTML = `
+            <div class="text-center py-12">
+              <i class="fas fa-inbox text-gray-400 text-6xl mb-4"></i>
+              <h3 class="text-xl font-semibold text-gray-600 mb-2">No hay datos para mostrar</h3>
+              <p class="text-gray-500">Parece que no hay transcripciones disponibles para procesar.</p>
+            </div>
+          `;
+        } else {
+          // Agregar un índice de navegación al inicio
+          let tableOfContents = `
+            <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-6 mb-8">
+              <h2 class="text-xl font-semibold text-indigo-800 mb-4 flex items-center gap-2">
+                <i class="fas fa-list text-indigo-600"></i>
+                Índice de Contenido
+              </h2>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                ${steps.map((_, index) => `
+                  <a href="#transcription-${index + 1}" class="bg-white hover:bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-center transition-all hover:shadow-md">
+                    <i class="fas fa-file-text text-indigo-500 mr-2"></i>
+                    <span class="text-indigo-700 font-medium">Transcripción ${index + 1}</span>
+                  </a>
+                `).join('')}
+                ${tfidf.length > 0 ? `
+                  <a href="#tfidf-table" class="bg-purple-100 hover:bg-purple-200 border-2 border-purple-300 rounded-lg p-3 text-center transition-all hover:shadow-md">
+                    <i class="fas fa-table text-purple-600 mr-2"></i>
+                    <span class="text-purple-700 font-bold">📊 Tabla TF-IDF Final</span>
+                  </a>
+                ` : ''}
+              </div>
+              <div class="mt-4 text-sm text-indigo-600">
+                <p><strong>📌 Total:</strong> ${steps.length} transcripciones procesadas | 
+                ${tfidf.length > 0 ? `<strong>📈 TF-IDF:</strong> ${tfidf.length} términos analizados` : 'Sin análisis TF-IDF'}
+                </p>
+              </div>
+            </div>
+          `;
+
+          contentHTML += tableOfContents;
 
           // Process each transcription step
           steps.forEach((step, index) => {
             contentHTML += `
-              <div class="fade-in mb-12">
-                <h2 class="text-xl font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-200 flex items-center gap-2">
-                  <span class="bg-indigo-100 text-indigo-800 rounded-full w-8 h-8 flex items-center justify-center text-sm">${index + 1}</span>
-                  Transcripción ${index + 1}
+              <div id="transcription-${index + 1}" class="fade-in mb-12 bg-gradient-to-r from-white to-gray-50 rounded-lg p-6 shadow-sm border border-gray-200 scroll-mt-20">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-200 flex items-center gap-3">
+                  <span class="step-badge text-white rounded-full w-10 h-10 flex items-center justify-center text-sm font-bold">${index + 1}</span>
+                  <span>Transcripción ${index + 1}</span>
+                  <span class="text-sm font-normal text-gray-500">(${step.lemmatized.length} palabras finales)</span>
+                  <a href="#transcription-${index + 1}" class="ml-auto text-gray-400 hover:text-indigo-600 text-lg">
+                    <i class="fas fa-link"></i>
+                  </a>
                 </h2>
                 
                 <div class="table-container mt-4">
                   <table class="w-full text-left text-sm text-gray-700">
-                    <thead class="text-xs text-gray-700 uppercase">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-100">
                       <tr>
-                        <th scope="col" class="px-6 py-3">Paso</th>
-                        <th scope="col" class="px-6 py-3">Resultado</th>
+                        <th scope="col" class="px-6 py-3 w-1/4">Paso</th>
+                        <th scope="col" class="px-6 py-3 w-3/4">Resultado</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr class="highlight border-b border-gray-200">
-                        <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">Original</td>
-                        <td class="px-6 py-4">${step.original}</td>
+                        <td class="px-6 py-4 font-medium text-gray-900">
+                          <i class="fas fa-file-alt text-blue-500 mr-2"></i>Original
+                        </td>
+                        <td class="px-6 py-4 bg-blue-50">${step.original}</td>
                       </tr>
                       <tr class="highlight border-b border-gray-200">
-                        <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">Minúsculas</td>
-                        <td class="px-6 py-4">${step.lower}</td>
+                        <td class="px-6 py-4 font-medium text-gray-900">
+                          <i class="fas fa-text-width text-green-500 mr-2"></i>Minúsculas
+                        </td>
+                        <td class="px-6 py-4 bg-green-50">${step.lower}</td>
                       </tr>
                       <tr class="highlight border-b border-gray-200">
-                        <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">Tokenización</td>
-                        <td class="px-6 py-4">${step.tokens.join(', ')}</td>
+                        <td class="px-6 py-4 font-medium text-gray-900">
+                          <i class="fas fa-cut text-orange-500 mr-2"></i>Tokenización
+                        </td>
+                        <td class="px-6 py-4 bg-orange-50">
+                          <div class="flex flex-wrap gap-1">
+                            ${step.tokens.map(token => `<span class="bg-orange-200 px-2 py-1 rounded text-xs">${token}</span>`).join('')}
+                          </div>
+                        </td>
                       </tr>
                       <tr class="highlight border-b border-gray-200">
-                        <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">Sin Stopwords</td>
-                        <td class="px-6 py-4">${step.no_stopwords.join(', ')}</td>
+                        <td class="px-6 py-4 font-medium text-gray-900">
+                          <i class="fas fa-filter text-purple-500 mr-2"></i>Sin Stopwords
+                        </td>
+                        <td class="px-6 py-4 bg-purple-50">
+                          <div class="flex flex-wrap gap-1">
+                            ${step.no_stopwords.map(word => `<span class="bg-purple-200 px-2 py-1 rounded text-xs">${word}</span>`).join('')}
+                          </div>
+                        </td>
                       </tr>
-                      <tr class="highlight border-b border-gray-200">
-                        <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">Lematización</td>
-                        <td class="px-6 py-4">${step.lemmatized.join(', ')}</td>
+                      <tr class="highlight">
+                        <td class="px-6 py-4 font-medium text-gray-900">
+                          <i class="fas fa-magic text-red-500 mr-2"></i>Normalizado
+                        </td>
+                        <td class="px-6 py-4 bg-red-50">
+                          <div class="flex flex-wrap gap-1">
+                            ${step.lemmatized.map(word => `<span class="bg-red-200 px-2 py-1 rounded text-xs font-medium">${word}</span>`).join('')}
+                          </div>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -125,56 +339,162 @@
             `;
           });
 
-          // Add TF-IDF table
+          // Add TF-IDF table AL FINAL de todo
           if (tfidf.length > 0) {
+            const headers = Object.keys(tfidf[0]);
             contentHTML += `
-              <div class="fade-in">
-                <h2 class="text-xl font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-200 flex items-center gap-2">
-                  <i class="fas fa-table text-indigo-600"></i>
-                  Tabla TF-IDF
-                </h2>
+              <!-- Separador visual antes de la tabla TF-IDF -->
+              <div class="my-12 text-center">
+                <div class="inline-flex items-center gap-4 bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-8 py-4 rounded-full shadow-lg">
+                  <i class="fas fa-chart-line text-2xl"></i>
+                  <span class="text-xl font-bold">ANÁLISIS TF-IDF COMPLETO</span>
+                  <i class="fas fa-chart-line text-2xl"></i>
+                </div>
+              </div>
+
+              <div id="tfidf-table" class="fade-in bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 rounded-xl p-8 shadow-lg border-2 border-purple-200 scroll-mt-20">
+                <div class="text-center mb-6">
+                  <h2 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600 mb-3">
+                    📊 Matriz TF-IDF Final
+                  </h2>
+                  <p class="text-lg text-gray-600 mb-2">
+                    Análisis completo de <strong class="text-purple-600">${tfidf.length}</strong> términos más relevantes
+                  </p>
+                  <p class="text-sm text-gray-500">
+                    Basado en el procesamiento de <strong>${steps.length}</strong> transcripciones completas
+                  </p>
+                </div>
                 
-                <div class="table-container mt-4 max-h-96 overflow-y-auto">
+                <div class="table-container mt-6 max-h-96 overflow-y-auto border-2 border-purple-300 rounded-lg">
                   <table class="w-full text-left text-sm text-gray-700">
-                    <thead class="text-xs text-gray-700 uppercase sticky top-0">
+                    <thead class="text-xs text-gray-700 uppercase sticky top-0 bg-gradient-to-r from-purple-100 to-indigo-100 border-b-2 border-purple-300">
                       <tr>
-                        ${Object.keys(tfidf[0]).map(h => `<th scope="col" class="px-6 py-3">${h}</th>`).join('')}
+                        ${headers.map(h => `<th scope="col" class="px-4 py-4 ${h === 'Término' ? 'font-bold text-purple-800' : 'text-indigo-700'}">${h}</th>`).join('')}
                       </tr>
                     </thead>
                     <tbody>
-                      ${tfidf.map(row => `
-                        <tr class="highlight border-b border-gray-200">
-                          ${Object.keys(row).map(h => `
-                            <td class="px-6 py-4">${row[h].toFixed(2)}</td>
+                      ${tfidf.map((row, idx) => `
+                        <tr class="highlight border-b border-purple-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-purple-25'} hover:bg-purple-100 transition-colors">
+                          ${headers.map(h => `
+                            <td class="px-4 py-3 ${h === 'Término' ? 'font-bold text-purple-900 bg-purple-50 border-r border-purple-200' : 'text-center'}">
+                              ${h === 'Término' ? `<span class="bg-purple-200 px-2 py-1 rounded-full text-xs">${row[h]}</span>` : parseFloat(row[h]).toFixed(4)}
+                            </td>
                           `).join('')}
                         </tr>
                       `).join('')}
                     </tbody>
                   </table>
                 </div>
+                
+                <div class="mt-6 bg-white bg-opacity-70 rounded-lg p-4 border border-purple-200">
+                  <h3 class="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                    <i class="fas fa-info-circle text-blue-500"></i>
+                    Explicación de la Matriz TF-IDF
+                  </h3>
+                  <div class="text-sm text-gray-700 space-y-1">
+                    <p>• <strong>TF-IDF</strong> = Term Frequency × Inverse Document Frequency</p>
+                    <p>• <strong>Valores más altos</strong> = Mayor relevancia del término en ese documento específico</p>
+                    <p>• <strong>Cada columna</strong> representa una transcripción (Doc_1, Doc_2, etc.)</p>
+                    <p>• <strong>Cada fila</strong> representa un término importante encontrado en el corpus</p>
+                  </div>
+                </div>
               </div>
             `;
           }
-
-          output.innerHTML = contentHTML;
-        })
-        .catch(error => {
-          document.getElementById('output').innerHTML = `
-            <div class="bg-red-50 border-l-4 border-red-500 p-4">
-              <div class="flex">
-                <div class="flex-shrink-0">
-                  <i class="fas fa-exclamation-circle text-red-500"></i>
-                </div>
-                <div class="ml-3">
-                  <p class="text-sm text-red-700">
-                    Error al cargar los datos. Por favor, inténtalo de nuevo más tarde.
-                  </p>
-                </div>
+          // Agregar botón "Ir al TF-IDF" flotante si hay muchas transcripciones
+          if (steps.length > 10 && tfidf.length > 0) {
+            contentHTML += `
+              <!-- Botón flotante para ir a TF-IDF -->
+              <div class="fixed bottom-6 right-6 z-50">
+                <a href="#tfidf-table" class="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-bold py-3 px-4 rounded-full shadow-lg hover:shadow-xl transition-all transform hover:scale-105">
+                  <i class="fas fa-table mr-2"></i>
+                  Ver TF-IDF
+                </a>
               </div>
+            `;
+          }
+        }
+
+        output.innerHTML = contentHTML;
+      }
+
+      function processDemoText() {
+        const text = document.getElementById('demoText').value.trim();
+        const resultDiv = document.getElementById('demoResult');
+        
+        if (!text) {
+          resultDiv.innerHTML = `
+            <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-r-lg">
+              <p class="text-yellow-700">Por favor, escribe algún texto para procesar.</p>
             </div>
           `;
-          console.error(error);
+          return;
+        }
+        
+        resultDiv.innerHTML = `
+          <div class="flex items-center gap-2 text-gray-600">
+            <div class="loading-spinner w-4 h-4"></div>
+            <span>Procesando texto...</span>
+          </div>
+        `;
+        
+        fetch(`${BACKEND_URL}/preprocessing_demo`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: text })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            throw new Error(data.error);
+          }
+          
+          const steps = data.steps;
+          resultDiv.innerHTML = `
+            <div class="bg-gray-50 rounded-lg p-4">
+              <h3 class="font-semibold text-gray-800 mb-3">Resultado del procesamiento:</h3>
+              <div class="space-y-2 text-sm">
+                <div><strong>Original:</strong> <span class="text-blue-600">${steps.original}</span></div>
+                <div><strong>Minúsculas:</strong> <span class="text-green-600">${steps.lower}</span></div>
+                <div><strong>Tokens:</strong> <span class="text-orange-600">[${steps.tokens.join(', ')}]</span></div>
+                <div><strong>Sin stopwords:</strong> <span class="text-purple-600">[${steps.no_stopwords.join(', ')}]</span></div>
+                <div><strong>Normalizado:</strong> <span class="text-red-600 font-medium">[${steps.lemmatized.join(', ')}]</span></div>
+              </div>
+              ${data.tfidf_info ? `
+                <div class="mt-3 pt-3 border-t border-gray-300">
+                  <strong>Información TF:</strong> 
+                  <span class="text-gray-600">${data.tfidf_info.unique_words} palabras únicas de ${data.tfidf_info.total_words} totales</span>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        })
+        .catch(error => {
+          resultDiv.innerHTML = `
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
+              <p class="text-red-700">Error: ${error.message}</p>
+            </div>
+          `;
         });
+      }
+
+      function downloadCSV() {
+        window.open(`${BACKEND_URL}/download_processed_csv`, '_blank');
+      }
+
+      // Load data on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        loadData();
+      });
+
+      // Allow Enter key in textarea to process demo text
+      document.getElementById('demoText').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && e.ctrlKey) {
+          processDemoText();
+        }
+      });
     </script>
   </div>
 </body>

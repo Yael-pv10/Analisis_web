@@ -21,8 +21,7 @@ import seaborn as sns
 import io
 import base64
 import json
-
-# Agregar estas funciones al archivo app.py
+import sys
 
 # Importar modelo más rápido
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -1109,8 +1108,221 @@ def reset_system():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Importar sys para información del sistema
-import sys
+
+
+def preprocess_text_step_by_step(text):
+    """Preprocesamiento paso a paso para visualización"""
+    try:
+        if pd.isna(text) or not isinstance(text, str) or text.strip() == "":
+            return {
+                'original': '',
+                'lower': '',
+                'tokens': [],
+                'no_stopwords': [],
+                'lemmatized': []
+            }
+        
+        # Paso 1: Texto original
+        original = str(text).strip()
+        
+        # Paso 2: Convertir a minúsculas
+        lower_text = original.lower()
+        
+        # Paso 3: Tokenización básica (dividir por espacios y limpiar)
+        # Eliminar URLs, menciones, hashtags
+        clean_text = re.sub(r'http\S+|www\.\S+|@\w+|#\w+', '', lower_text)
+        # Eliminar números solos
+        clean_text = re.sub(r'\b\d+\b', '', clean_text)
+        # Mantener solo letras, números y algunos signos de puntuación importantes
+        clean_text = re.sub(r'[^\w\s\.\!\?\,\;\:\(\)áéíóúÁÉÍÓÚüÜñÑ]', ' ', clean_text)
+        # Limpiar espacios múltiples
+        clean_text = ' '.join(clean_text.split())
+        
+        # Tokenizar
+        tokens = [word for word in clean_text.split() if len(word) >= 2]
+        
+        # Paso 4: Eliminar stopwords
+        no_stopwords = [word for word in tokens if word not in stop_words_spanish]
+        
+        # Paso 5: "Lemmatización" simple (para español, solo removemos acentos como aproximación)
+        def simple_normalize(word):
+            # Normalización simple: remover acentos
+            replacements = {
+                'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
+                'ñ': 'n', 'ü': 'u'
+            }
+            for accented, simple in replacements.items():
+                word = word.replace(accented, simple)
+            return word
+        
+        lemmatized = [simple_normalize(word) for word in no_stopwords]
+        
+        return {
+            'original': original,
+            'lower': lower_text,
+            'tokens': tokens,
+            'no_stopwords': no_stopwords,
+            'lemmatized': lemmatized
+        }
+        
+    except Exception as e:
+        print(f"⚠️ Error en preprocess_text_step_by_step: {e}")
+        return {
+            'original': str(text) if text else '',
+            'lower': '',
+            'tokens': [],
+            'no_stopwords': [],
+            'lemmatized': []
+        }
+
+@app.route('/preprocessing_steps', methods=['GET'])
+def preprocessing_steps():
+    """Endpoint para mostrar pasos de preprocesamiento y TF-IDF"""
+    try:
+        print("🔍 Generando pasos de preprocesamiento...")
+        
+        # Verificar que existe el archivo
+        if not os.path.exists(TRANSCRIPTIONS_CSV):
+            return jsonify({'error': 'Archivo transcriptions.csv no encontrado'}), 400
+        
+        # Cargar datos
+        df = pd.read_csv(TRANSCRIPTIONS_CSV)
+        print(f"📊 Datos cargados: {len(df)} registros")
+        
+        # Filtrar solo transcripciones válidas
+        df_valid = df[
+            (df['transcription'].notna()) & 
+            (df['transcription'] != '') &
+            (df['transcription'].str.len() > 0)
+        ].copy()
+        
+        if len(df_valid) == 0:
+            return jsonify({'error': 'No hay transcripciones válidas para procesar'}), 400
+        
+        print(f"✅ Transcripciones válidas: {len(df_valid)}")
+        
+        # Tomar TODAS las transcripciones válidas (no solo 10)
+        df_sample = df_valid.copy()
+        print(f"🔥 Procesando TODAS las transcripciones: {len(df_sample)}")
+        
+        # Generar pasos para cada transcripción
+        steps = []
+        clean_texts = []
+        
+        for index, row in df_sample.iterrows():
+            text = row['transcription']
+            step_data = preprocess_text_step_by_step(text)
+            steps.append(step_data)
+            
+            # Para TF-IDF, usar el texto final procesado
+            final_text = ' '.join(step_data['lemmatized'])
+            clean_texts.append(final_text if final_text.strip() else 'texto_vacio')
+        
+        print(f"🔧 Pasos generados para {len(steps)} transcripciones")
+        
+        # Generar TF-IDF
+        tfidf_data = []
+        try:
+            if len(clean_texts) > 0 and any(text.strip() for text in clean_texts):
+                # Configurar vectorizador TF-IDF para más características
+                vectorizer = TfidfVectorizer(
+                    max_features=50,  # Aumentar a 50 características más importantes
+                    stop_words=list(stop_words_spanish),
+                    ngram_range=(1, 2),  # Incluir unigramas y bigramas
+                    min_df=2,  # Debe aparecer al menos en 2 documentos
+                    max_df=0.95,
+                    token_pattern=r'\b[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]{2,}\b'
+                )
+                
+                # Ajustar y transformar
+                tfidf_matrix = vectorizer.fit_transform(clean_texts)
+                feature_names = vectorizer.get_feature_names_out()
+                
+                print(f"📈 TF-IDF matriz: {tfidf_matrix.shape}")
+                print(f"🏷️ Características: {len(feature_names)}")
+                
+                # Convertir a formato de tabla
+                tfidf_dense = tfidf_matrix.toarray()
+                
+                for i, feature in enumerate(feature_names):
+                    row_data = {'Término': feature}
+                    for j, text in enumerate(clean_texts):
+                        row_data[f'Doc_{j+1}'] = float(tfidf_dense[j][i])
+                    tfidf_data.append(row_data)
+                
+                print(f"📋 Tabla TF-IDF generada: {len(tfidf_data)} términos")
+                
+        except Exception as e:
+            print(f"⚠️ Error generando TF-IDF: {e}")
+            tfidf_data = []
+        
+        # Preparar respuesta
+        response = {
+            'success': True,
+            'total_transcriptions': len(df_valid),
+            'sample_size': len(steps),
+            'steps': steps,
+            'tfidf': tfidf_data
+        }
+        
+        print(f"✅ Respuesta preparada con {len(steps)} pasos y {len(tfidf_data)} términos TF-IDF")
+        
+        return jsonify(response), 200
+        
+    except Exception as e:
+        print(f"❌ Error en preprocessing_steps: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/preprocessing_demo', methods=['POST'])
+def preprocessing_demo():
+    """Demostración de preprocesamiento para un texto específico"""
+    try:
+        text = request.json.get('text', '')
+        if not text:
+            return jsonify({'error': 'No se proporcionó texto'}), 400
+        
+        # Generar pasos
+        steps = preprocess_text_step_by_step(text)
+        
+        # Generar TF-IDF simple para este texto
+        final_text = ' '.join(steps['lemmatized'])
+        tfidf_info = {}
+        
+        if final_text.strip():
+            try:
+                # Contar frecuencias de términos
+                word_counts = {}
+                words = final_text.split()
+                for word in words:
+                    word_counts[word] = word_counts.get(word, 0) + 1
+                
+                # Calcular TF simple
+                total_words = len(words)
+                tf_scores = {word: count/total_words for word, count in word_counts.items()}
+                
+                tfidf_info = {
+                    'total_words': total_words,
+                    'unique_words': len(word_counts),
+                    'word_frequencies': word_counts,
+                    'tf_scores': tf_scores
+                }
+                
+            except Exception as e:
+                print(f"⚠️ Error calculando TF: {e}")
+                tfidf_info = {}
+        
+        return jsonify({
+            'success': True,
+            'text': text,
+            'steps': steps,
+            'tfidf_info': tfidf_info
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en preprocessing_demo: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
