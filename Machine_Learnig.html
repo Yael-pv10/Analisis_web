@@ -392,7 +392,14 @@
         <div class="dashboard">
             <!-- Configuración de URL de la API -->
             <div class="url-config">
-
+                <h3 style="margin-bottom: 10px; color: #1565c0;">🔗 Configuración de API</h3>
+                <label for="apiUrl" style="font-weight: 600;">URL del servidor:</label>
+                <input type="text" id="apiUrl" class="url-input" 
+                       value="https://audio-preprocessing-api-production.up.railway.app"
+                       placeholder="https://tu-api.railway.app">
+                <button class="btn" onclick="testConnection()" style="margin-top: 10px; font-size: 14px; padding: 8px 15px;">
+                    🔍 Probar Conexión
+                </button>
             </div>
 
             <!-- Controles de entrenamiento -->
