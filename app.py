@@ -1109,54 +1109,6 @@ def reset_system():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/preprocessing_steps', methods=['GET'])
-def preprocessing_steps():
-    if not os.path.exists(TRANSCRIPTIONS_CSV):
-        return jsonify({'error': 'No hay archivo de transcripciones'}), 404
-
-    df = pd.read_csv(TRANSCRIPTIONS_CSV)
-    raw_texts = df['transcription'].tolist()
-    results = []
-    processed_texts = []
-
-    for text in raw_texts:
-        step = {'original': text}
-
-        # Minúsculas
-        text_lower = text.lower()
-        step['lower'] = text_lower
-
-        # Tokenización
-        tokens = word_tokenize(text_lower)
-        step['tokens'] = tokens
-
-        # Eliminar signos de puntuación y stopwords
-        tokens_clean = [t for t in tokens if t.isalpha() and t not in stop_words]
-        step['no_stopwords'] = tokens_clean
-
-        # Lematización con spaCy
-        doc = nlp(' '.join(tokens_clean))
-        lemmatized = [token.lemma_ for token in doc]
-        step['lemmatized'] = lemmatized
-
-        processed_texts.append(' '.join(lemmatized))
-        results.append(step)
-
-    # TF-IDF
-    vectorizer = TfidfVectorizer()
-    tfidf_matrix = vectorizer.fit_transform(processed_texts)
-    tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=vectorizer.get_feature_names_out())
-
-    # Guardar CSV final
-    df['processed'] = processed_texts
-    df.to_csv(PROCESSED_CSV, index=False)
-
-    return jsonify({
-        'steps': results,
-        'tfidf': tfidf_df.to_dict(orient='records')
-    })
-
-
 # Importar sys para información del sistema
 import sys
 
