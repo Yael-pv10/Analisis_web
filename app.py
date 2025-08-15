@@ -1112,68 +1112,87 @@ def reset_system():
 # Agregar este código al final de app.py (antes del if __name__ == '__main__':)
 
 def preprocess_text_step_by_step(text):
-    """Preprocesamiento paso a paso para visualización"""
+    """Preprocesamiento paso a paso CORRECTO para visualización"""
     try:
         if pd.isna(text) or not isinstance(text, str) or text.strip() == "":
             return {
                 'original': '',
-                'lower': '',
+                'normalized': '',
                 'tokens': [],
-                'no_stopwords': [],
-                'lemmatized': []
+                'lemmatized': [],
+                'no_stopwords': []
             }
         
         # Paso 1: Texto original
         original = str(text).strip()
         
-        # Paso 2: Convertir a minúsculas
-        lower_text = original.lower()
-        
-        # Paso 3: Tokenización básica (dividir por espacios y limpiar)
+        # Paso 2: NORMALIZACIÓN (minúsculas + limpieza básica)
+        normalized = original.lower()
         # Eliminar URLs, menciones, hashtags
-        clean_text = re.sub(r'http\S+|www\.\S+|@\w+|#\w+', '', lower_text)
+        normalized = re.sub(r'http\S+|www\.\S+|@\w+|#\w+', '', normalized)
         # Eliminar números solos
-        clean_text = re.sub(r'\b\d+\b', '', clean_text)
-        # Mantener solo letras, números y algunos signos de puntuación importantes
-        clean_text = re.sub(r'[^\w\s\.\!\?\,\;\:\(\)áéíóúÁÉÍÓÚüÜñÑ]', ' ', clean_text)
+        normalized = re.sub(r'\b\d+\b', '', normalized)
+        # Mantener solo letras, espacios y algunos signos de puntuación
+        normalized = re.sub(r'[^\w\s\.\!\?\,\;\:\(\)áéíóúÁÉÍÓÚüÜñÑ]', ' ', normalized)
         # Limpiar espacios múltiples
-        clean_text = ' '.join(clean_text.split())
+        normalized = ' '.join(normalized.split()).strip()
         
-        # Tokenizar
-        tokens = [word for word in clean_text.split() if len(word) >= 2]
+        # Paso 3: TOKENIZACIÓN (dividir en palabras)
+        # Separar por espacios y filtrar tokens muy cortos
+        tokens = [word.strip() for word in normalized.split() if len(word.strip()) >= 2]
+        # Filtrar tokens que solo contengan puntuación
+        tokens = [word for word in tokens if re.search(r'[a-záéíóúñü]', word)]
         
-        # Paso 4: Eliminar stopwords
-        no_stopwords = [word for word in tokens if word not in stop_words_spanish]
-        
-        # Paso 5: "Lemmatización" simple (para español, solo removemos acentos como aproximación)
-        def simple_normalize(word):
-            # Normalización simple: remover acentos
+        # Paso 4: LEMMATIZACIÓN/NORMALIZACIÓN AVANZADA
+        def simple_lemmatize(word):
+            """Lemmatización simple para español"""
+            # Remover acentos (normalización)
             replacements = {
                 'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
                 'ñ': 'n', 'ü': 'u'
             }
+            lemma = word.lower()
             for accented, simple in replacements.items():
-                word = word.replace(accented, simple)
-            return word
+                lemma = lemma.replace(accented, simple)
+            
+            # Lemmatización muy básica para algunos casos comunes
+            # (En un caso real usarías spaCy o NLTK con modelos específicos)
+            if lemma.endswith('mente'):  # adverbios
+                lemma = lemma[:-5]
+            elif lemma.endswith('ción') or lemma.endswith('sion'):  # sustantivos
+                lemma = lemma[:-4] if lemma.endswith('ción') else lemma[:-4]
+            elif lemma.endswith('ando') or lemma.endswith('endo'):  # gerundios
+                lemma = lemma[:-4] + 'ar' if lemma.endswith('ando') else lemma[:-4] + 'er'
+            elif len(lemma) > 4:
+                # Remover algunos sufijos comunes
+                if lemma.endswith('os') or lemma.endswith('as'):
+                    lemma = lemma[:-2]
+                elif lemma.endswith('es'):
+                    lemma = lemma[:-2]
+            
+            return lemma
         
-        lemmatized = [simple_normalize(word) for word in no_stopwords]
+        lemmatized = [simple_lemmatize(token) for token in tokens]
+        
+        # Paso 5: ELIMINACIÓN DE STOPWORDS (al final)
+        no_stopwords = [word for word in lemmatized if word not in stop_words_spanish and len(word) >= 2]
         
         return {
             'original': original,
-            'lower': lower_text,
+            'normalized': normalized,
             'tokens': tokens,
-            'no_stopwords': no_stopwords,
-            'lemmatized': lemmatized
+            'lemmatized': lemmatized,
+            'no_stopwords': no_stopwords
         }
         
     except Exception as e:
         print(f"⚠️ Error en preprocess_text_step_by_step: {e}")
         return {
             'original': str(text) if text else '',
-            'lower': '',
+            'normalized': '',
             'tokens': [],
-            'no_stopwords': [],
-            'lemmatized': []
+            'lemmatized': [],
+            'no_stopwords': []
         }
 
 @app.route('/preprocessing_steps', methods=['GET'])
@@ -1215,8 +1234,8 @@ def preprocessing_steps():
             step_data = preprocess_text_step_by_step(text)
             steps.append(step_data)
             
-            # Para TF-IDF, usar el texto final procesado
-            final_text = ' '.join(step_data['lemmatized'])
+            # Para TF-IDF, usar el texto final procesado (sin stopwords)
+            final_text = ' '.join(step_data['no_stopwords'])
             clean_texts.append(final_text if final_text.strip() else 'texto_vacio')
         
         print(f"🔧 Pasos generados para {len(steps)} transcripciones")
@@ -1291,7 +1310,7 @@ def preprocessing_demo():
         steps = preprocess_text_step_by_step(text)
         
         # Generar TF-IDF simple para este texto
-        final_text = ' '.join(steps['lemmatized'])
+        final_text = ' '.join(steps['no_stopwords'])
         tfidf_info = {}
         
         if final_text.strip():
