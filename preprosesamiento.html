@@ -260,7 +260,7 @@
               </div>
               <div class="mt-4 text-sm text-indigo-600">
                 <p><strong>📌 Total:</strong> ${steps.length} transcripciones procesadas | 
-                ${tfidf.length > 0 ? `<strong>📈 TF-IDF:</strong> ${tfidf.length} términos analizados` : 'Sin análisis TF-IDF'}
+                ${tfidf.length > 0 ? `<strong>📈 TF-IDF:</strong> ${steps.length} filas × ${Object.keys(tfidf[0]).length - 1} términos` : 'Sin análisis TF-IDF'}
                 </p>
               </div>
             </div>
@@ -358,10 +358,10 @@
                     📊 Matriz TF-IDF Final
                   </h2>
                   <p class="text-lg text-gray-600 mb-2">
-                    Análisis completo de <strong class="text-purple-600">${tfidf.length}</strong> términos más relevantes
+                    Matriz con <strong class="text-purple-600">${steps.length}</strong> transcripciones (filas) × <strong class="text-purple-600">${tfidf.length > 0 ? Object.keys(tfidf[0]).length - 1 : 0}</strong> términos (columnas)
                   </p>
                   <p class="text-sm text-gray-500">
-                    Basado en el procesamiento de <strong>${steps.length}</strong> transcripciones completas
+                    Cada fila es una transcripción, cada columna es un término relevante
                   </p>
                 </div>
                 
@@ -369,15 +369,15 @@
                   <table class="w-full text-left text-sm text-gray-700">
                     <thead class="text-xs text-gray-700 uppercase sticky top-0 bg-gradient-to-r from-purple-100 to-indigo-100 border-b-2 border-purple-300">
                       <tr>
-                        ${headers.map(h => `<th scope="col" class="px-4 py-4 ${h === 'Término' ? 'font-bold text-purple-800' : 'text-indigo-700'}">${h}</th>`).join('')}
+                        ${headers.map((h, idx) => `<th scope="col" class="px-3 py-4 ${idx === 0 ? 'font-bold text-purple-800 min-w-32' : 'text-indigo-700 text-center min-w-20'}">${h}</th>`).join('')}
                       </tr>
                     </thead>
                     <tbody>
                       ${tfidf.map((row, idx) => `
                         <tr class="highlight border-b border-purple-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-purple-25'} hover:bg-purple-100 transition-colors">
-                          ${headers.map(h => `
-                            <td class="px-4 py-3 ${h === 'Término' ? 'font-bold text-purple-900 bg-purple-50 border-r border-purple-200' : 'text-center'}">
-                              ${h === 'Término' ? `<span class="bg-purple-200 px-2 py-1 rounded-full text-xs">${row[h]}</span>` : parseFloat(row[h]).toFixed(4)}
+                          ${headers.map((h, colIdx) => `
+                            <td class="px-3 py-3 ${colIdx === 0 ? 'font-bold text-purple-900 bg-purple-50 border-r border-purple-200 whitespace-nowrap' : 'text-center text-sm'}">
+                              ${colIdx === 0 ? `<span class="bg-purple-200 px-2 py-1 rounded-full text-xs">${row[h]}</span>` : (parseFloat(row[h]) > 0 ? parseFloat(row[h]).toFixed(4) : '0')}
                             </td>
                           `).join('')}
                         </tr>
@@ -393,9 +393,10 @@
                   </h3>
                   <div class="text-sm text-gray-700 space-y-1">
                     <p>• <strong>TF-IDF</strong> = Term Frequency × Inverse Document Frequency</p>
-                    <p>• <strong>Valores más altos</strong> = Mayor relevancia del término en ese documento específico</p>
-                    <p>• <strong>Cada columna</strong> representa una transcripción (Doc_1, Doc_2, etc.)</p>
-                    <p>• <strong>Cada fila</strong> representa un término importante encontrado en el corpus</p>
+                    <p>• <strong>Cada FILA</strong> = Una transcripción completa (documento)</p>
+                    <p>• <strong>Cada COLUMNA</strong> = Un término importante del vocabulario</p>
+                    <p>• <strong>Valores más altos</strong> = Mayor relevancia del término en esa transcripción específica</p>
+                    <p>• <strong>Valor 0</strong> = El término no aparece en esa transcripción</p>
                   </div>
                 </div>
               </div>

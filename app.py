@@ -1109,6 +1109,7 @@ def reset_system():
         return jsonify({'error': str(e)}), 500
 
 
+# Agregar este código al final de app.py (antes del if __name__ == '__main__':)
 
 def preprocess_text_step_by_step(text):
     """Preprocesamiento paso a paso para visualización"""
@@ -1241,13 +1242,16 @@ def preprocessing_steps():
                 print(f"📈 TF-IDF matriz: {tfidf_matrix.shape}")
                 print(f"🏷️ Características: {len(feature_names)}")
                 
-                # Convertir a formato de tabla
+                # Convertir a formato de tabla CORRECTAMENTE
+                # Cada FILA = una transcripción/documento
+                # Cada COLUMNA = un término/característica
                 tfidf_dense = tfidf_matrix.toarray()
                 
-                for i, feature in enumerate(feature_names):
-                    row_data = {'Término': feature}
-                    for j, text in enumerate(clean_texts):
-                        row_data[f'Doc_{j+1}'] = float(tfidf_dense[j][i])
+                # Crear encabezados: ['Documento', 'término1', 'término2', ...]
+                for doc_idx, text in enumerate(clean_texts):
+                    row_data = {'Documento': f'Transcripción_{doc_idx+1}'}
+                    for feat_idx, feature in enumerate(feature_names):
+                        row_data[feature] = float(tfidf_dense[doc_idx][feat_idx])
                     tfidf_data.append(row_data)
                 
                 print(f"📋 Tabla TF-IDF generada: {len(tfidf_data)} términos")
