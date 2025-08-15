@@ -58,7 +58,7 @@ from nltk.corpus import stopwords
 
 # Configuración del servidor
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["*"], methods=["GET", "POST", "OPTIONS"])
 
 AUDIO_DIR = 'audios'
 TRANSCRIPTIONS_CSV = 'transcriptions.csv'
@@ -75,15 +75,14 @@ stop_words_spanish = set([
 sentiment_cache = {}
 cache_lock = threading.Lock()
 
-
-
 def preprocess_for_ml(df):
     """Preprocesar datos para machine learning"""
     # Filtrar solo las filas que tienen sentimiento procesado
     df_processed = df[
         (df['sentimiento_predicho'].notna()) & 
         (df['sentimiento_predicho'] != 'Sin procesar') &
-        (df['sentimiento_predicdo'] != '') &
+        (df['sentimiento_predicho'] != '') &
+        (df['sentimiento_predicho'] != 'Sin texto') &
         (df['transcription'].notna()) &
         (df['transcription'] != '')
     ].copy()
@@ -120,26 +119,35 @@ def create_confusion_matrix_plot(y_true, y_pred, labels):
 def train_model():
     """Entrenar modelo de clasificación con Hold-out"""
     try:
+        print("🚀 Iniciando entrenamiento del modelo...")
+        
         # Verificar que existe el archivo
         if not os.path.exists(TRANSCRIPTIONS_CSV):
+            print("❌ Archivo transcriptions.csv no encontrado")
             return jsonify({'error': 'Archivo transcriptions.csv no encontrado'}), 400
         
         # Cargar datos
         df = pd.read_csv(TRANSCRIPTIONS_CSV)
+        print(f"📊 Datos cargados: {len(df)} registros")
         
         # Verificar que hay datos con sentimientos
         if 'sentimiento_predicho' not in df.columns:
+            print("❌ No hay datos de sentimiento")
             return jsonify({'error': 'No hay datos de sentimiento. Ejecuta el análisis primero.'}), 400
         
         # Preprocesar datos
         df_processed = preprocess_for_ml(df)
+        print(f"🔧 Datos procesados: {len(df_processed)} registros válidos")
         
         if len(df_processed) < 10:
+            print(f"❌ Datos insuficientes: {len(df_processed)} registros")
             return jsonify({'error': f'Datos insuficientes para entrenamiento. Solo {len(df_processed)} registros válidos.'}), 400
         
         # Preparar características y etiquetas
         X = df_processed['text_clean'].values
         y = df_processed['sentimiento_predicho'].values
+        
+        print(f"📝 Clases únicas: {np.unique(y)}")
         
         # Vectorización TF-IDF
         vectorizer = TfidfVectorizer(
@@ -150,6 +158,7 @@ def train_model():
         )
         
         X_tfidf = vectorizer.fit_transform(X)
+        print(f"🔤 Características TF-IDF: {X_tfidf.shape}")
         
         # Codificar etiquetas
         label_encoder = LabelEncoder()
@@ -166,6 +175,8 @@ def train_model():
             stratify=y_encoded
         )
         
+        print(f"📊 División: Train={len(X_train)}, Test={len(X_test)}")
+        
         # Entrenar modelo de Regresión Logística
         model = LogisticRegression(
             random_state=random_state,
@@ -174,6 +185,7 @@ def train_model():
         )
         
         model.fit(X_train, y_train)
+        print("✅ Modelo entrenado")
         
         # Predicciones
         y_pred_train = model.predict(X_train)
@@ -182,6 +194,8 @@ def train_model():
         # Métricas de desempeño
         train_accuracy = accuracy_score(y_train, y_pred_train)
         test_accuracy = accuracy_score(y_test, y_pred_test)
+        
+        print(f"🎯 Precisión - Train: {train_accuracy:.3f}, Test: {test_accuracy:.3f}")
         
         # Reporte de clasificación
         class_names = label_encoder.classes_
@@ -246,6 +260,8 @@ def train_model():
             json_results.pop('confusion_matrix_img', None)
             json.dump(json_results, f, ensure_ascii=False, indent=2)
         
+        print("✅ Resultados guardados")
+        
         return jsonify({
             'success': True,
             'message': 'Modelo entrenado exitosamente',
@@ -253,7 +269,9 @@ def train_model():
         }), 200
         
     except Exception as e:
-        print(f"Error en entrenamiento: {e}")
+        print(f"❌ Error en entrenamiento: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/get_model_results', methods=['GET'])
@@ -280,6 +298,7 @@ def get_model_results():
             }), 404
             
     except Exception as e:
+        print(f"❌ Error en get_model_results: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/predict_sentiment', methods=['POST'])
@@ -305,6 +324,7 @@ def predict_sentiment_ml():
         }), 200
         
     except Exception as e:
+        print(f"❌ Error en predict_sentiment: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/model_statistics', methods=['GET'])
@@ -324,20 +344,36 @@ def model_statistics():
         
         # Si tiene datos de sentimiento
         if 'sentimiento_predicho' in df.columns:
-            df_processed = preprocess_for_ml(df)
+            # Filtrar datos procesados correctamente
+            df_valid = df[
+                (df['sentimiento_predicho'].notna()) & 
+                (df['sentimiento_predicho'] != 'Sin procesar') &
+                (df['sentimiento_predicho'] != '') &
+                (df['sentimiento_predicho'] != 'Sin texto') &
+                (df['transcription'].notna()) &
+                (df['transcription'] != '')
+            ]
             
             stats.update({
-                'processed_records': len(df_processed),
-                'sentiment_distribution': df_processed['sentimiento_predicho'].value_counts().to_dict(),
-                'avg_text_length': float(df_processed['transcription'].str.len().mean()),
-                'min_text_length': int(df_processed['transcription'].str.len().min()),
-                'max_text_length': int(df_processed['transcription'].str.len().max()),
-                'ready_for_ml': len(df_processed) >= 10
+                'processed_records': len(df_valid),
+                'sentiment_distribution': df_valid['sentimiento_predicho'].value_counts().to_dict(),
+                'avg_text_length': float(df_valid['transcription'].str.len().mean()) if len(df_valid) > 0 else 0,
+                'min_text_length': int(df_valid['transcription'].str.len().min()) if len(df_valid) > 0 else 0,
+                'max_text_length': int(df_valid['transcription'].str.len().max()) if len(df_valid) > 0 else 0,
+                'ready_for_ml': len(df_valid) >= 10
+            })
+        else:
+            stats.update({
+                'processed_records': 0,
+                'ready_for_ml': False,
+                'sentiment_distribution': {}
             })
         
+        print(f"📊 Estadísticas generadas: {stats}")
         return jsonify(stats), 200
         
     except Exception as e:
+        print(f"❌ Error en model_statistics: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/upload', methods=['POST'])
@@ -427,7 +463,7 @@ def analyze_sentiment_vader(text):
         return result
         
     except Exception as e:
-        print(f"Error en análisis de sentimiento: {e}")
+        print(f"❌ Error en análisis de sentimiento: {e}")
         return {"label": "Neutral", "score": 0.0, "rank": 2}
 
 def analyze_sentiment_batch(texts):
@@ -516,8 +552,9 @@ def analyze_sentiments():
             
     except Exception as e:
         print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-
 
 # Endpoint simple para verificar las columnas añadidas
 @app.route('/check_columns', methods=['GET'])
@@ -538,8 +575,8 @@ def check_columns():
         
         # Si ya tiene las columnas de sentimiento, mostrar distribución
         if info['tiene_sentimientos']:
-            distribución = df['sentimiento_predicho'].value_counts().to_dict()
-            info['distribución_sentimientos'] = distribución
+            distribucion = df['sentimiento_predicho'].value_counts().to_dict()
+            info['distribucion_sentimientos'] = distribucion
             
             # Mostrar algunos ejemplos
             ejemplos = df[['transcription', 'sentimiento_predicho', 'confianza']].head(5)
@@ -549,7 +586,6 @@ def check_columns():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 # Endpoint para ver el archivo completo con las nuevas columnas
 @app.route('/show_updated_file', methods=['GET'])
@@ -588,7 +624,7 @@ def verify_original_file():
             'file_path': os.path.abspath(TRANSCRIPTIONS_CSV),
             'total_rows': len(df),
             'columns': list(df.columns),
-            'has_sentiment_columns': all(col in df.columns for col in ['sentimiento_predicho', 'score', 'rank']),
+            'has_sentiment_columns': all(col in df.columns for col in ['sentimiento_predicho', 'confianza', 'rank_sentimiento']),
             'file_size_bytes': os.path.getsize(TRANSCRIPTIONS_CSV),
             'last_modified': time.ctime(os.path.getmtime(TRANSCRIPTIONS_CSV))
         }
@@ -614,7 +650,6 @@ def verify_original_file():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
 # FUNCIÓN PARA MOSTRAR CONTENIDO COMPLETO DEL ARCHIVO ORIGINAL
 @app.route('/show_original_content', methods=['GET'])
 def show_original_content():
@@ -634,7 +669,6 @@ def show_original_content():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 # ENDPOINT PARA COMPARAR ARCHIVOS (SI EXISTEN AMBOS)
 @app.route('/compare_files', methods=['GET'])
@@ -675,7 +709,6 @@ def compare_files():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
 # También actualiza el endpoint para verificar el estado del archivo
 @app.route('/get_transcriptions', methods=['GET'])
 def get_transcriptions():
@@ -708,7 +741,6 @@ def get_transcriptions():
         print(f"Error en get_transcriptions: {e}")
         return jsonify({'error': str(e)}), 500
 
-
 # Función auxiliar para verificar la integridad del archivo
 @app.route('/verify_csv', methods=['GET'])
 def verify_csv():
@@ -722,7 +754,7 @@ def verify_csv():
         stats = {
             'total_rows': len(df),
             'columns': list(df.columns),
-            'has_sentiment_columns': all(col in df.columns for col in ['sentimiento_predicho', 'score', 'rank']),
+            'has_sentiment_columns': all(col in df.columns for col in ['sentimiento_predicho', 'confianza', 'rank_sentimiento']),
         }
         
         if stats['has_sentiment_columns']:
@@ -770,7 +802,9 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'model': 'VADER Sentiment',
-        'cache_size': len(sentiment_cache)
+        'cache_size': len(sentiment_cache),
+        'transcriptions_file_exists': os.path.exists(TRANSCRIPTIONS_CSV),
+        'server_time': time.strftime('%Y-%m-%d %H:%M:%S')
     }), 200
 
 @app.route('/download_processed_csv', methods=['GET'])
@@ -789,6 +823,8 @@ def clear_cache():
     with cache_lock:
         cache_size = len(sentiment_cache)
         sentiment_cache.clear()
+    
+    print(f"🧹 Cache limpiado: {cache_size} entradas eliminadas")
     
     return jsonify({
         'success': True,
@@ -830,12 +866,121 @@ def model_info():
             'files_available': {
                 'transcriptions': os.path.exists(TRANSCRIPTIONS_CSV),
                 'model_results': os.path.exists('model_results.json')
+            },
+            'python_version': f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            'dependencies': {
+                'flask': True,
+                'pandas': True,
+                'sklearn': True,
+                'vader_sentiment': True,
+                'matplotlib': True,
+                'seaborn': True
             }
         }
     }), 200
 
+# Endpoint adicional para debugging y monitoreo
+@app.route('/debug_info', methods=['GET'])
+def debug_info():
+    """Información de debugging del sistema"""
+    try:
+        info = {
+            'server_status': 'running',
+            'current_time': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'working_directory': os.getcwd(),
+            'files_in_directory': os.listdir('.'),
+            'cache_info': {
+                'size': len(sentiment_cache),
+                'sample_keys': list(sentiment_cache.keys())[:5] if sentiment_cache else []
+            }
+        }
+        
+        # Información del archivo de transcripciones
+        if os.path.exists(TRANSCRIPTIONS_CSV):
+            df = pd.read_csv(TRANSCRIPTIONS_CSV)
+            info['transcriptions_info'] = {
+                'exists': True,
+                'rows': len(df),
+                'columns': list(df.columns),
+                'file_size_bytes': os.path.getsize(TRANSCRIPTIONS_CSV),
+                'has_sentiment_data': 'sentimiento_predicho' in df.columns
+            }
+        else:
+            info['transcriptions_info'] = {'exists': False}
+        
+        # Información del modelo
+        if os.path.exists('model_results.json'):
+            info['model_info'] = {
+                'results_file_exists': True,
+                'file_size_bytes': os.path.getsize('model_results.json')
+            }
+        else:
+            info['model_info'] = {'results_file_exists': False}
+        
+        return jsonify(info), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e), 'debug': True}), 500
+
+# Endpoint para resetear todo el sistema (útil para testing)
+@app.route('/reset_system', methods=['POST'])
+def reset_system():
+    """Resetear cache y archivos temporales (solo para desarrollo)"""
+    try:
+        # Limpiar cache
+        global sentiment_cache
+        with cache_lock:
+            sentiment_cache.clear()
+        
+        # Eliminar archivos temporales (opcional)
+        temp_files = ['model_results.json']
+        removed_files = []
+        
+        for file in temp_files:
+            if os.path.exists(file):
+                os.remove(file)
+                removed_files.append(file)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Sistema reseteado',
+            'cache_cleared': True,
+            'files_removed': removed_files
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Importar sys para información del sistema
+import sys
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
+    debug_mode = os.environ.get("DEBUG", "False").lower() == "true"
+    
     print(f"🚀 Iniciando servidor en puerto {port}")
-    print("📊 Usando VADER Sentiment Analysis para mejor rendimiento")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    print(f"📊 Usando VADER Sentiment Analysis para mejor rendimiento")
+    print(f"🔧 Modo debug: {debug_mode}")
+    print(f"📁 Directorio de trabajo: {os.getcwd()}")
+    print(f"📝 Archivo de transcripciones: {TRANSCRIPTIONS_CSV}")
+    
+    # Verificar dependencias importantes
+    try:
+        import sklearn
+        print(f"✅ scikit-learn versión: {sklearn.__version__}")
+    except ImportError:
+        print("❌ scikit-learn no está instalado")
+    
+    try:
+        import matplotlib
+        print(f"✅ matplotlib versión: {matplotlib.__version__}")
+    except ImportError:
+        print("❌ matplotlib no está instalado")
+    
+    try:
+        import seaborn
+        print(f"✅ seaborn versión: {seaborn.__version__}")
+    except ImportError:
+        print("❌ seaborn no está instalado")
+    
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

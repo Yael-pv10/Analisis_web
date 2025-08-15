@@ -364,6 +364,22 @@
             box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
             display: none;
         }
+
+        .url-config {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #bbdefb;
+        }
+
+        .url-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #90caf9;
+            border-radius: 5px;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -374,6 +390,18 @@
         </div>
 
         <div class="dashboard">
+            <!-- Configuración de URL de la API -->
+            <div class="url-config">
+                <h3 style="margin-bottom: 10px; color: #1565c0;">🔗 Configuración de API</h3>
+                <label for="apiUrl" style="font-weight: 600;">URL del servidor:</label>
+                <input type="text" id="apiUrl" class="url-input" 
+                       value="https://audio-preprocessing-api-production.up.railway.app"
+                       placeholder="https://tu-api.railway.app">
+                <button class="btn" onclick="testConnection()" style="margin-top: 10px; font-size: 14px; padding: 8px 15px;">
+                    🔍 Probar Conexión
+                </button>
+            </div>
+
             <!-- Controles de entrenamiento -->
             <div class="controls">
                 <h2 style="margin-bottom: 20px; color: #2c3e50;">⚙️ Configuración del Modelo</h2>
@@ -474,21 +502,79 @@
     </div>
 
     <script>
-        const API_URL = 'audio-preprocessing-api-production.up.railway.app'; // Cambia por tu URL de Railway
+        // Función para obtener la URL de la API
+        function getApiUrl() {
+            const urlInput = document.getElementById('apiUrl');
+            return urlInput.value.trim() || 'https://audio-preprocessing-api-production.up.railway.app';
+        }
+
+        // Función para hacer requests con mejor manejo de errores
+        async function makeRequest(endpoint, options = {}) {
+            const apiUrl = getApiUrl();
+            const url = `${apiUrl}${endpoint}`;
+            
+            try {
+                console.log(`Haciendo request a: ${url}`);
+                
+                const response = await fetch(url, {
+                    ...options,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        ...options.headers
+                    }
+                });
+                
+                console.log(`Response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                return { success: true, data };
+                
+            } catch (error) {
+                console.error('Request error:', error);
+                return { 
+                    success: false, 
+                    error: error.message.includes('Failed to fetch') 
+                        ? 'Error de conexión. Verifica la URL del servidor.' 
+                        : error.message 
+                };
+            }
+        }
+
+        async function testConnection() {
+            try {
+                showInfo('Probando conexión...');
+                const result = await makeRequest('/health');
+                
+                if (result.success) {
+                    showSuccess(`✅ Conexión exitosa! Estado: ${result.data.status}`);
+                } else {
+                    showError(`❌ Error de conexión: ${result.error}`);
+                }
+            } catch (error) {
+                showError(`❌ Error de conexión: ${error.message}`);
+            }
+        }
         
         async function loadStatistics() {
             try {
-                const response = await fetch(`${API_URL}/model_statistics`);
-                const data = await response.json();
+                showInfo('Cargando estadísticas...');
+                const result = await makeRequest('/model_statistics');
                 
-                if (response.ok) {
-                    displayStatistics(data);
+                if (result.success) {
+                    displayStatistics(result.data);
                     document.getElementById('statisticsSection').style.display = 'block';
+                    showSuccess('Estadísticas cargadas exitosamente');
                 } else {
-                    showError(data.error || 'Error al cargar estadísticas');
+                    showError(result.error);
                 }
             } catch (error) {
-                showError('Error de conexión: ' + error.message);
+                showError('Error al cargar estadísticas: ' + error.message);
             }
         }
 
@@ -496,8 +582,10 @@
             const statsGrid = document.getElementById('statsGrid');
             statsGrid.innerHTML = '';
 
+            console.log('Estadísticas recibidas:', stats);
+
             const cards = [
-                { title: 'Total de Registros', value: stats.total_records, label: 'transcripciones' },
+                { title: 'Total de Registros', value: stats.total_records || 0, label: 'transcripciones' },
                 { title: 'Registros Procesados', value: stats.processed_records || 0, label: 'con sentimiento' },
                 { title: 'Listo para ML', value: stats.ready_for_ml ? 'SÍ' : 'NO', label: stats.ready_for_ml ? 'entrenamiento posible' : 'datos insuficientes' }
             ];
@@ -541,31 +629,28 @@
             hideMessages();
 
             try {
-                const testSize = document.getElementById('testSize').value / 100;
+                const testSize = parseFloat(document.getElementById('testSize').value) / 100;
                 const randomState = parseInt(document.getElementById('randomState').value);
 
-                const response = await fetch(`${API_URL}/train_model`, {
+                console.log('Enviando datos de entrenamiento:', { testSize, randomState });
+
+                const result = await makeRequest('/train_model', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
                     body: JSON.stringify({
                         test_size: testSize,
                         random_state: randomState
                     })
                 });
 
-                const data = await response.json();
-                
-                if (response.ok && data.success) {
+                if (result.success && result.data.success) {
                     showSuccess('¡Modelo entrenado exitosamente!');
-                    displayResults(data.results);
+                    displayResults(result.data.results);
                     document.getElementById('resultsSection').style.display = 'block';
                 } else {
-                    showError(data.error || 'Error al entrenar el modelo');
+                    showError(result.data?.error || result.error || 'Error desconocido al entrenar el modelo');
                 }
             } catch (error) {
-                showError('Error de conexión: ' + error.message);
+                showError('Error al entrenar el modelo: ' + error.message);
             } finally {
                 trainBtn.disabled = false;
                 loading.style.display = 'none';
@@ -574,22 +659,24 @@
 
         async function loadResults() {
             try {
-                const response = await fetch(`${API_URL}/get_model_results`);
-                const data = await response.json();
+                showInfo('Cargando resultados...');
+                const result = await makeRequest('/get_model_results');
                 
-                if (response.ok && data.success) {
-                    displayResults(data.results);
+                if (result.success && result.data.success) {
+                    displayResults(result.data.results);
                     document.getElementById('resultsSection').style.display = 'block';
                     showSuccess('Resultados cargados exitosamente');
                 } else {
-                    showError(data.message || 'No hay resultados disponibles');
+                    showError(result.data?.message || result.error || 'No hay resultados disponibles');
                 }
             } catch (error) {
-                showError('Error de conexión: ' + error.message);
+                showError('Error al cargar resultados: ' + error.message);
             }
         }
 
         function displayResults(results) {
+            console.log('Mostrando resultados:', results);
+
             // Mostrar accuracy scores
             const accuracyDisplay = document.getElementById('accuracyDisplay');
             accuracyDisplay.innerHTML = `
@@ -619,13 +706,19 @@
             }
 
             // Mostrar métricas por clase
-            displayMetricsTable(results.classification_report);
+            if (results.classification_report) {
+                displayMetricsTable(results.classification_report);
+            }
 
             // Mostrar características importantes
-            displayTopFeatures(results.top_features);
+            if (results.top_features) {
+                displayTopFeatures(results.top_features);
+            }
         }
 
         function displayMetricsTable(classificationReport) {
+            console.log('Classification report:', classificationReport);
+            
             const metricsTable = document.getElementById('metricsTable');
             let tableHTML = `
                 <thead>
@@ -640,17 +733,20 @@
                 <tbody>
             `;
 
+            // Mostrar métricas por clase
             Object.entries(classificationReport).forEach(([className, metrics]) => {
                 if (className !== 'accuracy' && className !== 'macro avg' && className !== 'weighted avg') {
-                    tableHTML += `
-                        <tr>
-                            <td><strong>${className}</strong></td>
-                            <td>${(metrics.precision * 100).toFixed(1)}%</td>
-                            <td>${(metrics.recall * 100).toFixed(1)}%</td>
-                            <td>${(metrics['f1-score'] * 100).toFixed(1)}%</td>
-                            <td>${metrics.support}</td>
-                        </tr>
-                    `;
+                    if (typeof metrics === 'object' && metrics.precision !== undefined) {
+                        tableHTML += `
+                            <tr>
+                                <td><strong>${className}</strong></td>
+                                <td>${(metrics.precision * 100).toFixed(1)}%</td>
+                                <td>${(metrics.recall * 100).toFixed(1)}%</td>
+                                <td>${(metrics['f1-score'] * 100).toFixed(1)}%</td>
+                                <td>${metrics.support}</td>
+                            </tr>
+                        `;
+                    }
                 }
             });
 
@@ -673,6 +769,8 @@
         }
 
         function displayTopFeatures(topFeatures) {
+            console.log('Top features:', topFeatures);
+            
             const featuresGrid = document.getElementById('featuresGrid');
             featuresGrid.innerHTML = '';
 
@@ -681,14 +779,16 @@
                 featureCard.className = 'feature-card';
                 
                 let featuresHTML = '';
-                features.forEach(feature => {
-                    featuresHTML += `
-                        <div class="feature-item">
-                            <span class="feature-name">${feature.feature}</span>
-                            <span class="feature-score">${feature.coefficient.toFixed(3)}</span>
-                        </div>
-                    `;
-                });
+                if (Array.isArray(features)) {
+                    features.forEach(feature => {
+                        featuresHTML += `
+                            <div class="feature-item">
+                                <span class="feature-name">${feature.feature}</span>
+                                <span class="feature-score">${feature.coefficient.toFixed(3)}</span>
+                            </div>
+                        `;
+                    });
+                }
 
                 featureCard.innerHTML = `
                     <div class="feature-card-header">
@@ -712,23 +812,19 @@
             }
 
             try {
-                const response = await fetch(`${API_URL}/predict_sentiment`, {
+                showInfo('Analizando sentimiento...');
+                const result = await makeRequest('/predict_sentiment', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
                     body: JSON.stringify({ text: text })
                 });
 
-                const data = await response.json();
-                
-                if (response.ok) {
-                    displayPredictionResult(data);
+                if (result.success) {
+                    displayPredictionResult(result.data);
                 } else {
-                    showError(data.error || 'Error al hacer la predicción');
+                    showError(result.error);
                 }
             } catch (error) {
-                showError('Error de conexión: ' + error.message);
+                showError('Error al hacer la predicción: ' + error.message);
             }
         }
 
@@ -768,6 +864,7 @@
         }
 
         function showError(message) {
+            hideMessages();
             const errorMsg = document.getElementById('errorMsg');
             errorMsg.textContent = message;
             errorMsg.style.display = 'block';
@@ -779,6 +876,7 @@
         }
 
         function showSuccess(message) {
+            hideMessages();
             const successMsg = document.getElementById('successMsg');
             successMsg.textContent = message;
             successMsg.style.display = 'block';
@@ -789,48 +887,139 @@
             }, 3000);
         }
 
+        function showInfo(message) {
+            hideMessages();
+            const successMsg = document.getElementById('successMsg');
+            successMsg.textContent = message;
+            successMsg.style.display = 'block';
+            successMsg.style.background = '#cce7ff';
+            successMsg.style.color = '#0066cc';
+            successMsg.style.border = '1px solid #99d6ff';
+            
+            // Restaurar estilo después de un tiempo
+            setTimeout(() => {
+                successMsg.style.background = '#d4edda';
+                successMsg.style.color = '#155724';
+                successMsg.style.border = '1px solid #c3e6cb';
+            }, 1000);
+        }
+
         function hideMessages() {
             document.getElementById('errorMsg').style.display = 'none';
             document.getElementById('successMsg').style.display = 'none';
         }
 
-        // Cargar estadísticas al inicio
-        window.addEventListener('DOMContentLoaded', function() {
-            loadStatistics();
-        });
-
-        // Función para actualizar la URL de la API
-        function updateApiUrl() {
-            const currentUrl = window.location.origin;
-            if (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1')) {
-                // Si estamos en desarrollo local
-                window.API_URL = 'http://localhost:5000';
-            } else {
-                // Si estamos en producción, usar la URL actual o especificar la de Railway
-                window.API_URL = 'audio-preprocessing-api-production.up.railway.app'; // Cambia esto por tu URL real
-            }
-        }
-
-        // Actualizar URL al cargar
-        updateApiUrl();
-
-        // Función para exportar resultados
-        function exportResults() {
-            // Esta función podría implementarse para descargar un reporte en PDF o Excel
-            alert('Función de exportación en desarrollo');
-        }
-
         // Función para limpiar cache
         async function clearCache() {
             try {
-                const response = await fetch(`${API_URL}/clear_cache`, { method: 'POST' });
-                if (response.ok) {
+                const result = await makeRequest('/clear_cache', { method: 'POST' });
+                if (result.success) {
                     showSuccess('Cache limpiado exitosamente');
+                } else {
+                    showError(result.error);
                 }
             } catch (error) {
                 showError('Error al limpiar cache: ' + error.message);
             }
         }
+
+        // Cargar estadísticas al inicio
+        window.addEventListener('DOMContentLoaded', function() {
+            console.log('Página cargada, probando conexión...');
+            testConnection();
+        });
+
+        // Función para verificar el estado del servidor
+        async function checkServerStatus() {
+            const result = await makeRequest('/health');
+            return result.success;
+        }
+
+        // Función para exportar resultados (placeholder)
+        function exportResults() {
+            alert('Función de exportación en desarrollo. Los resultados se pueden copiar manualmente de las tablas mostradas.');
+        }
+
+        // Funciones de utilidad adicionales
+        function resetForm() {
+            document.getElementById('testSize').value = 20;
+            document.getElementById('randomState').value = 42;
+            document.getElementById('predictionText').value = '';
+            document.getElementById('predictionResult').style.display = 'none';
+            hideMessages();
+        }
+
+        // Validación de inputs
+        function validateInputs() {
+            const testSize = parseFloat(document.getElementById('testSize').value);
+            const randomState = parseInt(document.getElementById('randomState').value);
+            
+            if (testSize < 10 || testSize > 40) {
+                showError('El tamaño del conjunto de prueba debe estar entre 10% y 40%');
+                return false;
+            }
+            
+            if (randomState < 1 || randomState > 1000) {
+                showError('La semilla aleatoria debe estar entre 1 y 1000');
+                return false;
+            }
+            
+            return true;
+        }
+
+        // Mejorar la función trainModel con validación
+        async function trainModelWithValidation() {
+            if (!validateInputs()) {
+                return;
+            }
+            await trainModel();
+        }
+
+        // Event listeners adicionales
+        document.getElementById('testSize').addEventListener('input', function() {
+            const value = parseFloat(this.value);
+            if (value < 10) this.value = 10;
+            if (value > 40) this.value = 40;
+        });
+
+        document.getElementById('randomState').addEventListener('input', function() {
+            const value = parseInt(this.value);
+            if (value < 1) this.value = 1;
+            if (value > 1000) this.value = 1000;
+        });
+
+        // Función para mostrar información del modelo
+        async function showModelInfo() {
+            try {
+                const result = await makeRequest('/model_info');
+                if (result.success) {
+                    const info = result.data;
+                    let infoText = `
+Tipo de Modelo: ${info.model_type}
+Método de Validación: ${info.validation_method}
+Analizador de Sentimientos: ${info.sentiment_analyzer}
+
+Características:
+- Máximo de características TF-IDF: ${info.features.tfidf_max_features}
+- Rango de N-gramas: ${info.features.ngram_range}
+- Preprocesamiento: ${info.features.preprocessing}
+
+Estado del Servidor:
+- Tamaño del cache: ${info.server_info.cache_size}
+- Archivo de transcripciones: ${info.server_info.files_available.transcriptions ? '✅' : '❌'}
+- Resultados del modelo: ${info.server_info.files_available.model_results ? '✅' : '❌'}
+                    `;
+                    alert(infoText);
+                } else {
+                    showError(result.error);
+                }
+            } catch (error) {
+                showError('Error al obtener información del modelo: ' + error.message);
+            }
+        }
+
+        // Actualizar el botón de entrenar para usar validación
+        document.getElementById('trainBtn').onclick = trainModelWithValidation;
     </script>
 </body>
 </html>
